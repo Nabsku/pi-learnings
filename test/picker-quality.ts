@@ -46,13 +46,13 @@ const ctx = {
 const turns = recentPickableTurns(ctx, 10);
 
 assert(turns[0]?.id === "a2", "suspicious assistant overclaim after a failing tool result should rank first");
-assert(turns[0]?.label.startsWith("⚠ assistant"), "top suspicious option should use warning-first assistant label");
-assert(turns[0]?.label.includes("after tool failure t1"), "label should identify the specific failing tool turn");
+assert(turns[0]?.label.startsWith("[likely] assistant · overclaim/tool-failure"), "top suspicious option should use stable likely/role/category columns");
+assert(!turns[0]?.label.includes("after tool failure"), "label should avoid dense prose reasons");
 assert(turns[0]?.label.includes("pnpm test failed"), "label should include the contradictory tool output excerpt");
 assert(turns[0]?.label.includes("All checks passed"), "label should keep the useful excerpt");
 assert(turns.some((turn) => turn.id === "__last_assistant__"), "picker should include a fast-path last assistant option");
 const lastAssistant = turns.find((turn) => turn.id === "__last_assistant__");
 assert(lastAssistant?.sourceTurnId === "a3", "last assistant fast path should point to the latest assistant turn");
-assert(lastAssistant?.label.includes("Last assistant turn"), "fast path should be plainly labeled");
+assert(lastAssistant?.label.startsWith("[last] assistant"), "fast path should use a stable last prefix");
 
 console.log(`picker-quality top=${turns[0]?.id} last=${lastAssistant?.sourceTurnId}`);

@@ -112,12 +112,40 @@ function qualityHint(role: PickableTurn["role"], excerpt: string, contradictingT
   return { score: 5 };
 }
 
+function reasonCategory(turn: PickableTurn | Omit<PickableTurn, "label">): string {
+  if (turn.reason?.startsWith("after tool failure")) return "overclaim/tool-failure";
+  if (turn.reason === "verification claim") return "verification-claim";
+  if (turn.reason === "tool failure") return "tool-failure";
+  return "general";
+}
+
 function formatTurnLabel(turn: Omit<PickableTurn, "label">): string {
-  if (turn.id === "__last_assistant__") return `↩ Last assistant turn · ${bounded(turn.excerpt, 90)}`;
-  const prefix = turn.reason ? `⚠ ${turn.role}` : turn.role;
-  const reason = turn.reason ? ` · ${turn.reason}` : "";
-  const evidence = turn.evidenceExcerpt ? ` ↯ ${bounded(turn.evidenceExcerpt, 64)}` : "";
-  return `${prefix}${reason}${evidence} · ${bounded(turn.excerpt, 104)}`;
+  const prefix = turn.id === "__last_assistant__" ? "[last]" : turn.reason ? "[likely]" : "[recent]";
+  const evidence = turn.evidenceExcerpt ? ` · ev: ${bounded(turn.evidenceExcerpt, 48)}` : "";
+  return `${prefix} ${turn.role} · ${reasonCategory(turn)} · ${bounded(turn.excerpt, 96)}${evidence}`;
+}
+
+function renderTurnPreview(turn: PickableTurn): string {
+  return [
+    `role: ${turn.role}`,
+    turn.reason ? `reason: ${reasonCategory(turn)}` : undefined,
+    "",
+    "selected excerpt:",
+    turn.excerpt,
+    turn.evidenceExcerpt ? "" : undefined,
+    turn.evidenceExcerpt ? "evidence excerpt:" : undefined,
+    turn.evidenceExcerpt,
+  ].filter((line): line is string => line !== undefined).join("\n");
+}
+
+function suggestedIssue(turn: PickableTurn): string {
+  if (turn.reason?.startsWith("after tool failure") || (turn.role === "assistant" && turn.evidenceExcerpt && issueSignal(turn.evidenceExcerpt) && overclaimSignal(turn.excerpt))) {
+    return "Claimed success after tool output showed failure.";
+  }
+  if (turn.reason === "verification claim") return "Claimed verification without enough evidence.";
+  if (turn.reason === "tool failure") return "Tool output showed a failure that should be handled.";
+  if (turn.role === "assistant") return "Assistant response needs a more reliable behavior next time.";
+  return "This turn exposed behavior Pi should improve.";
 }
 
 export function recentPickableTurns(ctx: ExtensionCommandContext, limit = 18): PickableTurn[] {
@@ -204,8 +232,10 @@ function formatDraftLabel(record: LearningRecord): string {
 
 export async function runDraftReview(root: string, ctx: ExtensionCommandContext): Promise<{ ok: true; message: string; record: LearningRecord } | { ok: false; message: string }> {
   if (!ctx.hasUI) return { ok: false, message: "UI draft review unavailable in this mode. Use: /learn pending, /learn show <id>, /learn approve <id>, or /learn reject <id>." };
-  const drafts = listLearnings(root).filter((record) => record.draft);
-  if (drafts.length === 0) return { ok: false, message: "No pending drafts. Use /learn draft <id> first." };
+  const pending = listLearnings(root);
+  const drafts = pending.filter((record) => record.draft);
+  if (pending.length === 0) return { ok: false, message: "No pending learnings. Use /learn pick or /learn note <issue> first." };
+  if (drafts.length === 0) return { ok: false, message: `Found ${pending.length} pending learning${pending.length === 1 ? "" : "s"} without drafts. Use /learn draft <id> first.` };
 
   const labels = drafts.map(formatDraftLabel);
   const pickedLabel = await ctx.ui.select("Select draft to review", labels);
@@ -214,8 +244,19 @@ export async function runDraftReview(root: string, ctx: ExtensionCommandContext)
   if (!record) return { ok: false, message: "Cancelled. Selected draft was not found." };
 
   await ctx.ui.editor("Review learning draft (full text)", renderFullDraft(record));
-  const action = await ctx.ui.select("Approve or reject this draft", ["Approve", "Reject", "Cancel"]);
-  if (action === "Approve") {
+  const applyLabel = "Apply rule to AGENTS.md";
+  const backLabel = "Keep pending / Back";
+  const rejectLabel = "Reject draft";
+  const action = await ctx.ui.select("Apply or reject this draft", [backLabel, applyLabel, rejectLabel]);
+  if (action === applyLabel) {
+    const target = `${record.recommendedTarget.kind}:${record.recommendedTarget.path}`;
+    const rule = record.draft?.proposedText ?? "(none)";
+    const consequence = `Target: ${target}\nRule to append: ${rule}`;
+    const ui = ctx.ui as typeof ctx.ui & { confirm?: (title: string, message: string) => Promise<boolean> };
+    const confirmed = ui.confirm
+      ? await ui.confirm("Confirm applying rule to AGENTS.md", consequence)
+      : (await ctx.ui.select(`Confirm applying rule to AGENTS.md\n\n${consequence}`, [backLabel, applyLabel])) === applyLabel;
+    if (!confirmed) return { ok: false, message: "Cancelled. Draft left pending." };
     const result = applyRepoAgentsRule(root, record);
     if (result.applied) {
       record.appliedAt = new Date().toISOString();
@@ -223,9 +264,12 @@ export async function runDraftReview(root: string, ctx: ExtensionCommandContext)
     }
     return { ok: true, record, message: result.message };
   }
-  if (action === "Reject") {
-    const reason = (await ctx.ui.input("Reject reason", "Optional reason"))?.trim() || undefined;
-    record.rejectionReason = reason;
+  if (action === rejectLabel) {
+    const reasons = ["Duplicate / already covered", "Too specific / not durable", "Wrong target", "Bad draft wording", "Not actually a mistake", "Other..."];
+    const structuredReason = await ctx.ui.select("Reject reason", reasons);
+    if (!structuredReason) return { ok: false, message: "Cancelled. Draft left pending." };
+    const detail = (await ctx.ui.input("Optional rejection detail", "Optional detail"))?.trim();
+    record.rejectionReason = detail ? `${structuredReason} — ${detail}` : structuredReason;
     moveLearning(root, record, "rejected");
     return { ok: true, record, message: `rejected: ${record.id}` };
   }
@@ -242,16 +286,25 @@ export async function runInteractiveLearn(root: string, ctx: ExtensionCommandCon
     return { ok: false, message: "No selectable session turns found. Use: /learn note <what went wrong>" };
   }
 
-  const labels = turns.map((turn) => turn.label);
-  const pickedLabel = await ctx.ui.select("Select the bad turn to learn from", labels);
-  if (!pickedLabel) return { ok: false, message: "Cancelled. No learning created." };
-  const picked = turns[labels.indexOf(pickedLabel)];
-  if (!picked) return { ok: false, message: "Cancelled. Selected turn was not found." };
+  let picked: PickableTurn | undefined;
+  while (!picked) {
+    const labels = turns.map((turn) => turn.label);
+    const pickedLabel = await ctx.ui.select("Select the turn to learn from", labels);
+    if (!pickedLabel) return { ok: false, message: "Cancelled. No learning created." };
+    const candidate = turns[labels.indexOf(pickedLabel)];
+    if (!candidate) return { ok: false, message: "Cancelled. Selected turn was not found." };
 
-  const issue = (await ctx.ui.input("What went wrong?", "Short concrete mistake, e.g. claimed tests passed without running them"))?.trim();
+    await ctx.ui.editor("Selected turn preview", renderTurnPreview(candidate));
+    const action = await ctx.ui.select("Use this turn?", ["Use this turn", "Back to picker", "Cancel"]);
+    if (action === "Use this turn") picked = candidate;
+    else if (action === "Back to picker") continue;
+    else return { ok: false, message: "Cancelled. No learning created." };
+  }
+
+  const issue = (await ctx.ui.input("What went wrong?", suggestedIssue(picked)))?.trim();
   if (!issue) return { ok: false, message: "Cancelled. No learning created." };
 
-  const desiredFutureBehavior = (await ctx.ui.editor("Future behavior rule input", "Optional: what should Pi do next time? Keep it durable, not one-off."))?.trim() || undefined;
+  const desiredFutureBehavior = (await ctx.ui.editor("What should Pi do differently next time?", "Optional: keep it durable, not one-off."))?.trim() || undefined;
   const classification: LearningClassification = await classifyIssueWithModel(root, `${issue}\n${picked.excerpt}\n${desiredFutureBehavior ?? ""}`, ctx);
   const config = loadConfig(root);
   const target = recommendTarget(classification);

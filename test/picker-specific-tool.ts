@@ -47,7 +47,7 @@ const turns = recentPickableTurns(unrelatedFailureCtx, 10);
 const claim = turns.find((turn) => turn.id === "a_claim");
 
 assert(claim, "claim turn should be selectable");
-assert(!claim.label.includes("after tool failure t_fail"), "claim should not be paired to an unrelated failure before the previous assistant turn");
+assert(!claim.evidenceTurnId, "claim should not be paired to an unrelated failure before the previous assistant turn");
 assert(!claim.label.includes("pytest failed"), "claim label should not surface unrelated stale failure output");
 
 const relatedFailureCtx = {
@@ -86,7 +86,7 @@ const relatedFailureCtx = {
 const relatedTurns = recentPickableTurns(relatedFailureCtx, 10);
 const relatedClaim = relatedTurns.find((turn) => turn.id === "a_claim");
 
-assert(relatedClaim?.label.includes("after tool failure t_fail"), "claim should be paired to the specific immediately related failing tool turn");
+assert(relatedClaim?.evidenceTurnId === "t_fail", "claim should be paired to the specific immediately related failing tool turn");
 assert(relatedClaim?.label.includes("npm test failed"), "claim should include the specific contradictory tool output");
 
 console.log("picker-specific-tool ok");

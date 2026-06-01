@@ -23,6 +23,8 @@ const root = mkdtempSync(join(tmpdir(), "pi-learning-loop-ui-"));
 writeFileSync(join(root, "AGENTS.md"), "# Repo Rules\n", "utf8");
 
 const uiCalls: string[] = [];
+let selectCount = 0;
+let sawPreview = false;
 const ctx = {
   cwd: root,
   hasUI: true,
@@ -36,35 +38,53 @@ const ctx = {
           message: { role: "user", content: "Please fix the tests." },
         },
         {
-          id: "a1",
-          type: "message",
-          timestamp: "2026-05-31T10:01:00.000Z",
-          message: { role: "assistant", content: "All tests pass now." },
-        },
-        {
           id: "t1",
           type: "message",
-          timestamp: "2026-05-31T10:02:00.000Z",
+          timestamp: "2026-05-31T10:01:00.000Z",
           message: { role: "tool", content: "pnpm test failed with exit code 1" },
+        },
+        {
+          id: "a1",
+          type: "message",
+          timestamp: "2026-05-31T10:02:00.000Z",
+          message: { role: "assistant", content: "All tests pass now." },
         },
       ];
     },
   },
   ui: {
     async select(title: string, options: string[]) {
+      selectCount += 1;
       uiCalls.push(`select:${title}:${options.join("|")}`);
-      assert(title.includes("Select the bad turn"), "picker title should explain the task");
-      assert(options.some((option) => option.includes("assistant") && option.includes("All tests pass")), "picker should include assistant turn excerpts");
-      return options.find((option) => option.includes("assistant"));
+      if (selectCount === 1) {
+        assert(title === "Select the turn to learn from", "picker title should use the new concise copy");
+        const assistantOption = options.find((option) => option.includes("assistant") && option.includes("All tests pass"));
+        assert(assistantOption, "picker should include assistant turn excerpts");
+        assert(/^\[(likely|recent|last)\] (assistant|tool|user) · /.test(assistantOption) && assistantOption.split(" · ").length >= 3, `picker label should use stable category/role/reason/excerpt columns: ${assistantOption}`);
+        assert(!assistantOption.includes("after tool failure"), "picker label should avoid dense prose reasons");
+        return assistantOption;
+      }
+      assert(title === "Use this turn?", "preview confirmation should be asked after full preview");
+      assert(options.join("|") === "Use this turn|Back to picker|Cancel", "preview confirmation should offer use/back/cancel");
+      return "Use this turn";
     },
     async input(title: string, placeholder?: string) {
       uiCalls.push(`input:${title}:${placeholder ?? ""}`);
       assert(title.includes("What went wrong"), "issue prompt should be explicit");
-      return "Pi claimed tests passed when the tool output showed failure";
+      assert(placeholder === "Claimed success after tool output showed failure.", "issue prompt should suggest an issue from reason/evidence");
+      return placeholder;
     },
     async editor(title: string, prefill?: string) {
       uiCalls.push(`editor:${title}:${prefill ?? ""}`);
-      assert(title.includes("Future behavior"), "desired behavior editor should be explicit");
+      if (title === "Selected turn preview") {
+        sawPreview = true;
+        assert(prefill?.includes("selected excerpt:"), "preview should include selected excerpt heading");
+        assert(prefill?.includes("All tests pass now."), "preview should include selected excerpt text");
+        assert(prefill?.includes("evidence excerpt:"), "preview should include evidence heading when present");
+        assert(prefill?.includes("pnpm test failed with exit code 1"), "preview should include evidence excerpt text");
+        return prefill;
+      }
+      assert(title === "What should Pi do differently next time?", "desired behavior editor should use new copy");
       return "Never claim tests passed unless the latest actual test command exited 0.";
     },
   },
@@ -72,7 +92,8 @@ const ctx = {
 
 await commands.learn.handler("pick", ctx);
 
-assert(uiCalls.length === 3, "interactive picker should use exactly select, input, editor; no background widgets/hooks");
+assert(uiCalls.length === 5, "interactive picker should use picker select, preview editor/select, issue input, and behavior editor only");
+assert(sawPreview, "interactive picker should preview the selected turn before asking for issue");
 const content = messages.at(-1)?.content ?? "";
 assert(content.includes("created:"), "pick should create a learning record");
 assert(content.includes("review:"), "pick should show a review summary");

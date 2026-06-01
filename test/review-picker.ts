@@ -8,6 +8,7 @@ type Command = { handler: (args: string, ctx: Record<string, unknown>) => Promis
 const commands: Record<string, Command> = {};
 const messages: Array<{ content: string; details?: unknown }> = [];
 const uiCalls: string[] = [];
+const rejectMessages: Array<{ content: string; details?: unknown }> = [];
 
 learningLoop({
   on() {},
@@ -40,7 +41,17 @@ const ctx = {
         assert(options.some((option) => option.includes("Do not claim a check passed")), "draft picker should show rule preview");
         return options.find((option) => option.includes(id));
       }
-      if (title.includes("Approve or reject")) return options.find((option) => option.startsWith("Approve"));
+      if (title.includes("Apply or reject")) {
+        assert(options[0] === "Keep pending / Back", "safe/back action should be first");
+        assert(options.includes("Apply rule to AGENTS.md"), "apply action should be explicit about AGENTS.md");
+        assert(options.includes("Reject draft"), "reject action should be explicit");
+        return "Apply rule to AGENTS.md";
+      }
+      if (title.includes("Confirm applying")) {
+        assert(options[0] === "Keep pending / Back", "confirmation safe/back choice should be first");
+        assert(options.includes("Apply rule to AGENTS.md"), "confirmation should require explicit apply");
+        return "Apply rule to AGENTS.md";
+      }
       throw new Error(`unexpected select title: ${title}`);
     },
     async editor(title: string, prefill: string) {
@@ -60,5 +71,49 @@ assert(agents.includes("Do not claim a check passed"), "approving through review
 assert(existsSync(join(root, ".pi/learnings/applied", `${id}.json`)), "review-approved draft should move to applied");
 assert(uiCalls.some((call) => call.startsWith("select:Select draft")), "draft picker should be used");
 assert(uiCalls.some((call) => call.startsWith("editor:Review learning draft")), "full overflow review should be used");
+
+const rejectRoot = mkdtempSync(join(tmpdir(), "pi-learning-loop-review-reject-"));
+writeFileSync(join(rejectRoot, "AGENTS.md"), "# Repo Rules\n", "utf8");
+await commands.learn.handler("note one-off typo in a temporary scratch file", { cwd: rejectRoot });
+const rejectId = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(messages.at(-1)?.content ?? "")?.[0];
+assert(rejectId, "created rejection fixture should include id");
+await commands.learn.handler(`draft ${rejectId}`, { cwd: rejectRoot });
+const rejectCtx = {
+  cwd: rejectRoot,
+  hasUI: true,
+  ui: {
+    async select(title: string, options: string[]) {
+      if (title.includes("Select draft")) return options.find((option) => option.includes(rejectId));
+      if (title.includes("Apply or reject")) return "Reject draft";
+      if (title.includes("Reject reason")) {
+        assert(options.includes("Duplicate / already covered"), "structured duplicate reason should be offered");
+        assert(options.includes("Too specific / not durable"), "structured durability reason should be offered");
+        assert(options.includes("Wrong target"), "structured wrong-target reason should be offered");
+        assert(options.includes("Bad draft wording"), "structured wording reason should be offered");
+        assert(options.includes("Not actually a mistake"), "structured mistake reason should be offered");
+        assert(options.includes("Other..."), "structured other reason should be offered");
+        return "Too specific / not durable";
+      }
+      throw new Error(`unexpected reject select title: ${title}`);
+    },
+    async input(title: string) {
+      assert(title.includes("Optional rejection detail"), "rejection should ask for optional detail");
+      return "only applied to today's scratch file";
+    },
+    async editor(_title: string, prefill: string) {
+      return prefill;
+    },
+  },
+};
+await commands.learn.handler("review", { ...rejectCtx, send: (content: string) => rejectMessages.push({ content }) } as never);
+const rejected = JSON.parse(readFileSync(join(rejectRoot, ".pi/learnings/rejected", `${rejectId}.json`), "utf8"));
+assert(rejected.rejectionReason === "Too specific / not durable — only applied to today's scratch file", "structured rejection reason and detail should be combined");
+
+const emptyRoot = mkdtempSync(join(tmpdir(), "pi-learning-loop-review-empty-"));
+await commands.learn.handler("review", { cwd: emptyRoot, hasUI: true, ui: rejectCtx.ui } as never);
+assert(messages.at(-1)?.content.includes("No pending learnings"), "empty state should distinguish no pending learnings");
+await commands.learn.handler("note pending without draft", { cwd: emptyRoot });
+await commands.learn.handler("review", { cwd: emptyRoot, hasUI: true, ui: rejectCtx.ui } as never);
+assert(messages.at(-1)?.content.includes("pending learning") && messages.at(-1)?.content.includes("without drafts"), "empty state should distinguish pending records without drafts");
 
 console.log(`review-picker root=${root} id=${id}`);
