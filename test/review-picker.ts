@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import learningLoop from "../index.ts";
+import { createLearning } from "../src/store.ts";
 
 type Command = { handler: (args: string, ctx: Record<string, unknown>) => Promise<void> };
 
@@ -112,7 +113,12 @@ assert(rejected.rejectionReason === "Too specific / not durable — only applied
 const emptyRoot = mkdtempSync(join(tmpdir(), "pi-learning-loop-review-empty-"));
 await commands.learn.handler("review", { cwd: emptyRoot, hasUI: true, ui: rejectCtx.ui } as never);
 assert(messages.at(-1)?.content.includes("No pending learnings"), "empty state should distinguish no pending learnings");
-await commands.learn.handler("note pending without draft", { cwd: emptyRoot });
+createLearning(emptyRoot, {
+  source: { selector: "manual", role: "unknown", excerpt: "pending without draft" },
+  issue: { description: "pending without draft" },
+  classification: "other",
+  recommendedTarget: { kind: "repo-agents", path: "AGENTS.md" },
+});
 await commands.learn.handler("review", { cwd: emptyRoot, hasUI: true, ui: rejectCtx.ui } as never);
 assert(messages.at(-1)?.content.includes("pending learning") && messages.at(-1)?.content.includes("without drafts"), "empty state should distinguish pending records without drafts");
 

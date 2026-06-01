@@ -25,7 +25,7 @@ const root = mkdtempSync(join(tmpdir(), "pi-learning-loop-"));
 writeFileSync(join(root, "AGENTS.md"), "# Repo Rules\n\n## Verification\n\n", "utf8");
 
 await commands.learn.handler("note Pi claimed tests passed without running the command", { cwd: root });
-assert(messages.at(-1)?.content.includes("created: learn_"), "note should create a learning");
+assert(messages.at(-1)?.content.includes("drafted: learn_"), "note should create and draft a learning");
 const id = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(messages.at(-1)?.content ?? "")?.[0];
 assert(id, "created message should include id");
 assert(existsSync(join(root, ".pi/learnings/pending", `${id}.json`)), "pending record should be written");

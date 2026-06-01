@@ -54,7 +54,9 @@ export function registerLearningCommand(pi: ExtensionAPI) {
         const target = recommendTarget(classification);
         if (target.kind === "repo-agents") target.path = config.repoAgentsPath;
         const record = createLearning(root, { source: { selector: "manual", role: "unknown", excerpt: bounded(issue, config.maxExcerptChars) }, issue: { description: bounded(issue, 1000) }, classification, recommendedTarget: target });
-        send(`created: ${record.id}\nnext: /learn draft ${record.id}`, record);
+        record.draft = await draftLearning(root, record, ctx);
+        saveLearning(root, record);
+        send(`drafted: ${record.id}\nReview with: /learn review`, record);
         return;
       }
       if (sub === "pending") {

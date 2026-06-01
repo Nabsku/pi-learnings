@@ -49,11 +49,15 @@ mkdirSync(join(root, "docs"), { recursive: true });
 writeFileSync(join(root, "docs/AGENTS.md"), "# Docs Rules\n", "utf8");
 
 await commands.learn.handler("note tests passed claim used no command", { cwd: root });
-const id = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(messages.at(-1)?.content ?? "")?.[0];
+const noteMessage = messages.at(-1)?.content ?? "";
+const id = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(noteMessage)?.[0];
 assert(id, "created message should include id");
+assert(noteMessage.includes("drafted:"), "note should immediately draft the captured learning");
+assert(noteMessage.includes("Review with: /learn review"), "note should send the user to the review queue");
 assert(existsSync(join(root, ".pi/custom-learnings/pending", `${id}.json`)), "custom learningsDir should be used");
+const noteRecord = JSON.parse(readFileSync(join(root, ".pi/custom-learnings/pending", `${id}.json`), "utf8"));
+assert(noteRecord.draft?.proposedText, "note should persist an immediate draft");
 
-await commands.learn.handler(`draft ${id}`, { cwd: root });
 await commands.learn.handler(`approve ${id}`, { cwd: root });
 const docsAgents = readFileSync(join(root, "docs/AGENTS.md"), "utf8");
 assert(docsAgents.includes("## Agent Learnings"), "custom repoAgentsPath should receive approved rule");
