@@ -56,16 +56,11 @@ assert(noteMessage.includes("captured:"), "note should report the captured learn
 assert(noteMessage.includes("no repo rule applied"), "note should be explicit that no repo rule was applied");
 assert(noteMessage.includes("next: /learn"), "note should send the user to the review queue");
 assert(existsSync(join(root, ".pi/custom-learnings/pending", `${id}.json`)), "custom learningsDir should be used");
-const legacyRoot = mkdtempSync(join(tmpdir(), "pi-learnings-legacy-config-"));
-mkdirSync(join(legacyRoot, ".pi"), { recursive: true });
-writeFileSync(join(legacyRoot, ".pi/learning-loop.json"), JSON.stringify({ version: 1, learningsDir: ".pi/legacy-learnings", modelOverrides: {} }, null, 2), "utf8");
-await handlers.resources_discover?.[0]?.({ cwd: legacyRoot, reason: "startup" }, { cwd: legacyRoot });
-assert(!existsSync(join(legacyRoot, ".pi/learnings.json")), "legacy config should not be overwritten by automatic init");
-await commands.learn.handler("note legacy config stays readable", { cwd: legacyRoot });
-const legacyMessage = messages.at(-1)?.content ?? "";
-const legacyId = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(legacyMessage)?.[0];
-assert(legacyId, "legacy config note should include id");
-assert(existsSync(join(legacyRoot, ".pi/legacy-learnings/pending", `${legacyId}.json`)), "legacy config path should still be read");
+const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+const forbiddenReadmeTerms = ["leg" + "acy", "back" + "wards " + "com" + "pat" + "ibility", "learning" + "-loop.json"];
+assert(!forbiddenReadmeTerms.some((term) => readme.toLowerCase().includes(term)), "README should be forward-only and not document old config");
+assert(readme.includes('"draftRule"') && readme.includes('"classifyIssue"') && readme.includes('"thinkingLevel"'), "README should show the full modelOverrides config schema");
+assert(readme.includes("Example: repo-local rules file") && readme.includes("Example: explicit model overrides"), "README should include config examples");
 const noteRecord = JSON.parse(readFileSync(join(root, ".pi/custom-learnings/pending", `${id}.json`), "utf8"));
 assert(noteRecord.draft?.proposedText, "note should persist an immediate draft");
 

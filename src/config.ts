@@ -33,10 +33,6 @@ export function configPath(root: string): string {
   return resolve(root, ".pi", "learnings.json");
 }
 
-export function legacyConfigPath(root: string): string {
-  return resolve(root, ".pi", "learning-loop.json");
-}
-
 function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -82,10 +78,8 @@ function safeGlobalPiPath(value: unknown, fallback: string): string {
 
 export function loadConfig(root: string): LearningLoopConfig {
   const path = configPath(root);
-  const legacyPath = legacyConfigPath(root);
-  const readPath = existsSync(path) ? path : legacyPath;
-  if (!existsSync(readPath)) return { ...DEFAULT_CONFIG };
-  const parsed = JSON.parse(readFileSync(readPath, "utf8")) as Partial<LearningLoopConfig>;
+  if (!existsSync(path)) return { ...DEFAULT_CONFIG };
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<LearningLoopConfig>;
   return {
     version: 1,
     learningsDir: safeRepoRelative(root, parsed.learningsDir, DEFAULT_CONFIG.learningsDir),

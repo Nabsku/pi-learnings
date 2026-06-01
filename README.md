@@ -28,7 +28,48 @@ Advanced fallback commands remain available for scripts or broken/non-interactiv
 
 ## Config
 
-Config is created automatically when the plugin loads. It writes `.pi/learnings.json` and still reads legacy `.pi/learning-loop.json` if present:
+Config is created automatically when the plugin loads. The only supported config path is `.pi/learnings.json`:
+
+```json
+{
+  "version": 1,
+  "learningsDir": ".pi/learnings",
+  "repoAgentsPath": "AGENTS.md",
+  "globalAgentsPath": "~/.pi/agent/AGENTS.md",
+  "globalSystemPath": "~/.pi/agent/APPEND_SYSTEM.md",
+  "maxExcerptChars": 4000,
+  "modelOverrides": {
+    "draftRule": {
+      "model": "provider/model-id",
+      "thinkingLevel": "minimal"
+    },
+    "classifyIssue": {
+      "model": "provider/model-id",
+      "thinkingLevel": "minimal"
+    }
+  }
+}
+```
+
+Schema:
+
+- `version`: must be `1`.
+- `learningsDir`: repo-relative directory for pending/applied/rejected learning records. Default: `.pi/learnings`.
+- `repoAgentsPath`: repo-relative file that approved repo-local rules are written to. Default: `AGENTS.md`.
+- `globalAgentsPath`: exact global Pi `AGENTS.md` path allowed for explicit global-rule approval. Default: `~/.pi/agent/AGENTS.md`.
+- `globalSystemPath`: exact global Pi `APPEND_SYSTEM.md` path allowed for explicit global-system approval. Default: `~/.pi/agent/APPEND_SYSTEM.md`.
+- `maxExcerptChars`: maximum stored source excerpt length. Default: `4000`.
+- `modelOverrides`: optional per-operation model preferences for model-backed learning steps. Use `{}` to use the user's normal Pi/default model path.
+- `modelOverrides.draftRule`: optional model settings for `/learn draft`, `/learn pick`, and `learning_draft_rule`.
+- `modelOverrides.classifyIssue`: optional model settings for `/learn note`, `/learn pick`, and `learning_mark_issue`.
+- `modelOverrides.*.model`: optional model reference in the format Pi's model registry accepts, for example `openai-codex/gpt-5.5`.
+- `modelOverrides.*.thinkingLevel`: optional reasoning level. Allowed values: `minimal`, `low`, `medium`, `high`, `xhigh`.
+
+If a configured model cannot be resolved/authenticated or returns invalid JSON, the plugin falls back to deterministic local heuristics. Unsafe repo paths that escape the repo are ignored and fall back to defaults. Global Pi paths are only accepted when they resolve to the configured `~/.pi/agent/...` files.
+
+Examples:
+
+Example: default config using the current Pi model
 
 ```json
 {
@@ -42,21 +83,46 @@ Config is created automatically when the plugin loads. It writes `.pi/learnings.
 }
 ```
 
-Fields:
+Example: repo-local rules file
 
-- `learningsDir`: repo-relative directory for pending/applied/rejected learning records.
-- `repoAgentsPath`: repo-relative file that approved repo-local rules are written to.
-- `globalAgentsPath`: exact global Pi `AGENTS.md` path allowed for explicit global-rule approval.
-- `globalSystemPath`: exact global Pi `APPEND_SYSTEM.md` path allowed for explicit global-system approval.
-- `maxExcerptChars`: maximum stored source excerpt length.
-- `modelOverrides`: optional per-operation model preferences for model-backed learning steps. Leave it empty to use the user's normal Pi/default model path. If an explicit override is configured, `classifyIssue` is used when creating records from `/learn note`, `/learn pick`, or `learning_mark_issue`; `draftRule` is used by `/learn draft`, `/learn pick`, and `learning_draft_rule`. If the configured model cannot be resolved/authenticated or returns invalid JSON, the plugin falls back to deterministic local heuristics.
+```json
+{
+  "version": 1,
+  "learningsDir": ".pi/learnings",
+  "repoAgentsPath": "docs/AGENTS.md",
+  "globalAgentsPath": "~/.pi/agent/AGENTS.md",
+  "globalSystemPath": "~/.pi/agent/APPEND_SYSTEM.md",
+  "maxExcerptChars": 4000,
+  "modelOverrides": {}
+}
+```
 
-Unsafe repo paths that escape the repo are ignored and fall back to defaults. Global Pi paths are only accepted when they resolve to the configured `~/.pi/agent/...` files.
+Example: explicit model overrides
+
+```json
+{
+  "version": 1,
+  "learningsDir": ".pi/learnings",
+  "repoAgentsPath": "AGENTS.md",
+  "globalAgentsPath": "~/.pi/agent/AGENTS.md",
+  "globalSystemPath": "~/.pi/agent/APPEND_SYSTEM.md",
+  "maxExcerptChars": 4000,
+  "modelOverrides": {
+    "draftRule": {
+      "model": "openai-codex/gpt-5.5",
+      "thinkingLevel": "high"
+    },
+    "classifyIssue": {
+      "model": "openai-codex/gpt-5.4-mini",
+      "thinkingLevel": "minimal"
+    }
+  }
+}
+```
 
 ## Files touched
 
 - Creates `.pi/learnings.json` during plugin resource discovery if no config exists.
-- Reads legacy `.pi/learning-loop.json` if the new config is absent.
 - Creates learning records under `.pi/learnings/` by default.
 - Writes approved repo-local rules to the configured repo agents file, default `AGENTS.md`.
 - Writes global Pi files only through explicit global approval.
