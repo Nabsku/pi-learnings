@@ -43,7 +43,7 @@ jobs:
         run: pnpm test
 
       - name: Check package contents
-        run: pnpm pack --dry-run
+        run: npm pack --dry-run
 
       - name: Check whitespace
         run: git diff --check
