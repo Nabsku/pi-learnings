@@ -27,10 +27,10 @@ writeFileSync(join(root, "docs/TEAM_RULES.md"), "# Team Rules\n", "utf8");
 
 await commands.learn.handler("note claimed tests passed without running them", { cwd: root });
 const noteMessage = messages.at(-1)?.content ?? "";
-assert(noteMessage.includes("pending learning") || noteMessage.includes("proposed rule"), "note success should say it created a pending learning/proposed rule");
-assert(noteMessage.includes("no repo rule applied yet"), "note success should explicitly say no repo rule was applied yet");
-assert(noteMessage.includes("/learn review"), "note success should point to /learn review");
-assert(noteMessage.includes("docs/TEAM_RULES.md"), "note success should include target if approved");
+assert(noteMessage.includes("captured:"), "note success should include the captured learning id");
+assert(noteMessage.includes("no repo rule applied"), "note success should explicitly say no repo rule was applied");
+assert(noteMessage.includes("next: /learn"), "note success should point to /learn review");
+assert(!noteMessage.includes("docs/TEAM_RULES.md"), "non-UI note success should stay concise and omit target details");
 const id = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(noteMessage)?.[0];
 assert(id, "note message should include id");
 const beforeTarget = readFileSync(join(root, "docs/TEAM_RULES.md"), "utf8");

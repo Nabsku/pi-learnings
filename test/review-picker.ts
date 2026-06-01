@@ -79,6 +79,49 @@ assert(existsSync(join(root, ".pi/learnings/applied", `${id}.json`)), "review-ap
 assert(uiCalls.some((call) => call.startsWith("select:Select draft")), "draft picker should be used");
 assert(uiCalls.some((call) => call.startsWith("editor:Read-only preview: learning draft")), "full overflow review should be used");
 
+const followUpRoot = mkdtempSync(join(tmpdir(), "pi-learning-loop-note-follow-up-"));
+writeFileSync(join(followUpRoot, "AGENTS.md"), "# Repo Rules\n", "utf8");
+let followUpId = "";
+const followUpSelects: string[] = [];
+await commands.learn.handler("note claimed tests passed after a failing command", {
+  cwd: followUpRoot,
+  hasUI: true,
+  ui: {
+    async select(title: string, options: string[]) {
+      followUpSelects.push(`${title}:${options.join("|")}`);
+      if (title === "Review this learning draft now?") {
+        assert(options[0] === "Review now", "note follow-up should offer Review now first");
+        assert(options[1] === "Keep pending", "note follow-up should offer Keep pending");
+        return "Review now";
+      }
+      if (title.includes("Select draft")) {
+        followUpId = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(options[0] ?? "")?.[0] ?? "";
+        assert(followUpId, "review-now draft picker should include the newly captured draft");
+        return options[0];
+      }
+      if (title.includes("Apply or reject")) return "Keep pending / Back";
+      throw new Error(`unexpected follow-up select title: ${title}`);
+    },
+    async editor(_title: string, prefill: string) { return prefill; },
+  },
+} as never);
+assert(followUpId, "review now should enter draft review flow");
+assert(messages.at(-1)?.content.includes("Draft left pending"), "backing out of review-now should keep the draft pending safely");
+assert(existsSync(join(followUpRoot, ".pi/learnings/pending", `${followUpId}.json`)), "review-now back action should leave the note pending");
+assert(followUpSelects.some((call) => call.startsWith("Review this learning draft now?")), "note should show a follow-up choice when UI is available");
+
+const keepRoot = mkdtempSync(join(tmpdir(), "pi-learning-loop-note-keep-"));
+writeFileSync(join(keepRoot, "AGENTS.md"), "# Repo Rules\n", "utf8");
+await commands.learn.handler("note keep this draft pending", {
+  cwd: keepRoot,
+  hasUI: true,
+  ui: { async select() { return "Keep pending"; } },
+} as never);
+const keepMessage = messages.at(-1)?.content ?? "";
+assert(keepMessage.includes("captured:"), "Keep pending should send the concise captured message");
+assert(keepMessage.includes("no repo rule applied"), "Keep pending should say no repo rule was applied");
+assert(keepMessage.includes("next: /learn"), "Keep pending should point to review");
+
 const rejectRoot = mkdtempSync(join(tmpdir(), "pi-learning-loop-review-reject-"));
 writeFileSync(join(rejectRoot, "AGENTS.md"), "# Repo Rules\n", "utf8");
 await commands.learn.handler("note one-off typo in a temporary scratch file", { cwd: rejectRoot });

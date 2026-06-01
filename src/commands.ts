@@ -1,9 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { applyRepoAgentsRule, previewRepoAgentsRule } from "./apply.ts";
-import { classifyIssueWithModel, draftLearning, recommendTarget } from "./draft.ts";
-import { runDraftReview, runInteractiveLearn } from "./interactive.ts";
-import { bounded, createLearning, listLearnings, moveLearning, readLearning, repoRoot, saveLearning } from "./store.ts";
-import { loadConfig } from "./config.ts";
+import { draftLearning } from "./draft.ts";
+import { runDraftReview, runInteractiveLearn, runLearningMainMenu, runQuickNote } from "./interactive.ts";
+import { listLearnings, moveLearning, readLearning, repoRoot, saveLearning } from "./store.ts";
 import type { LearningClassification, LearningRecord } from "./types.ts";
 
 const CLASSIFICATION_LABELS: Record<LearningClassification, string> = {
@@ -16,6 +15,24 @@ const CLASSIFICATION_LABELS: Record<LearningClassification, string> = {
   transient: "Transient / note only",
   other: "Other",
 };
+
+const PRIMARY_HELP = [
+  "Primary:",
+  "/learn",
+  "/learn note <issue>",
+].join("\n");
+
+const ADVANCED_HELP = [
+  "Advanced fallback:",
+  "/learn review",
+  "/learn pending",
+  "/learn show <id>",
+  "/learn draft <id>",
+  "/learn approve <id> --confirm",
+  "/learn reject <id> [reason]",
+].join("\n");
+
+const LEARN_HELP = `${PRIMARY_HELP}\n\n${ADVANCED_HELP}\n\nUse /learn to review pending drafts in the UI. Use /learn note <issue> to capture a concrete mistake; it creates a pending draft without applying repo rules. Advanced commands are CLI fallbacks; direct approve without --confirm previews only.`;
 
 function classificationLabel(classification: LearningClassification): string {
   return CLASSIFICATION_LABELS[classification] ?? classification;
@@ -33,14 +50,14 @@ function renderPendingSummary(records: LearningRecord[]): string {
     `${records.length} pending ${noun}:`,
     ...records.map((record) => `- ${record.id} · ${classificationLabel(record.classification)} · ${record.recommendedTarget.kind}:${record.recommendedTarget.path} · ${shortLine(record.issue.description)}`),
     "",
-    "Next: /learn review or /learn show <id>",
+    "Next: /learn or /learn show <id>",
   ].join("\n");
 }
 
 function statusNextAction(record: LearningRecord): string[] {
   if (record.status !== "pending") return [`next: no approval action; learning is ${record.status}.`];
   return [
-    "next: /learn review",
+    "next: /learn",
     `CLI approve: /learn approve ${record.id} --confirm`,
     `reject: /learn reject ${record.id} Keep as note only / do not apply rule`,
   ];
@@ -61,7 +78,7 @@ function renderRecord(record: ReturnType<typeof readLearning>): string {
 
 export function registerLearningCommand(pi: ExtensionAPI) {
   pi.registerCommand("learn", {
-    description: "Learning loop: pick | review | note <issue> | draft <id> | show <id> | pending | approve <id> --confirm | reject <id> [reason]",
+    description: "Learning loop:\n/learn\n/learn note <issue>",
     getArgumentCompletions(prefix: string, ctx?: { cwd?: unknown }) {
       const trimmedStart = prefix.trimStart();
       const parts = trimmedStart.split(/\s+/);
@@ -78,17 +95,22 @@ export function registerLearningCommand(pi: ExtensionAPI) {
         }
       }
       const first = trimmedStart;
-      return ["pick", "review", "note", "draft", "show", "pending", "approve", "reject", "help"].filter((value) => value.startsWith(first)).map((value) => ({ value, label: value }));
+      if (first === "") return [{ value: "", label: "/learn" }, { value: "note", label: "note <issue>" }];
+      return ["pick", "last", "review", "note", "pending", "show", "draft", "approve", "reject", "help"].filter((value) => value.startsWith(first)).map((value) => ({ value, label: value }));
     },
     async handler(args, ctx) {
       const [subRaw, ...rest] = args.trim().split(/\s/).filter(Boolean);
-      const sub = subRaw ?? "help";
+      const sub = subRaw ?? "menu";
       const root = repoRoot(ctx.cwd);
-      const config = loadConfig(root);
       const send = (content: string, details?: unknown) => pi.sendMessage({ customType: "learning-loop", display: true, content, details });
 
+      if (sub === "menu") {
+        const result = await runLearningMainMenu(root, ctx);
+        send(result.message, result.ok ? result.record : result);
+        return;
+      }
       if (sub === "help") {
-        send("usage: /learn pick | review | note <issue> | draft <id> | show <id> | pending | approve <id> --confirm | reject <id> [reason]\n\nUse /learn pick to create a draft from a bad turn. Use /learn review to pick, inspect, approve, or reject pending drafts. Direct approve without --confirm previews only.");
+        send(LEARN_HELP);
         return;
       }
       if (sub === "pick" || sub === "last") {
@@ -104,13 +126,16 @@ export function registerLearningCommand(pi: ExtensionAPI) {
       if (sub === "note") {
         const issue = rest.join(" ").trim();
         if (!issue) { send("usage: /learn note <what went wrong>"); return; }
-        const classification = await classifyIssueWithModel(root, issue, ctx);
-        const target = recommendTarget(classification);
-        if (target.kind === "repo-agents") target.path = config.repoAgentsPath;
-        const record = createLearning(root, { source: { selector: "manual", role: "unknown", excerpt: bounded(issue, config.maxExcerptChars) }, issue: { description: bounded(issue, 1000) }, classification, recommendedTarget: target });
-        record.draft = await draftLearning(root, record, ctx);
-        saveLearning(root, record);
-        send(`pending learning created: ${record.id}\nProposed rule drafted; no repo rule applied yet.\nNext: /learn review\nTarget if approved: ${record.recommendedTarget.path}`, record);
+        const result = await runQuickNote(root, ctx, issue);
+        if (result.ok && ctx.hasUI) {
+          const action = await ctx.ui.select("Review this learning draft now?", ["Review now", "Keep pending"]);
+          if (action === "Review now") {
+            const reviewResult = await runDraftReview(root, ctx);
+            send(reviewResult.message, reviewResult.ok ? reviewResult.record : reviewResult);
+            return;
+          }
+        }
+        send(result.message, result.ok ? result.record : result);
         return;
       }
       if (sub === "pending") {
@@ -156,7 +181,7 @@ export function registerLearningCommand(pi: ExtensionAPI) {
         send(`rejected: ${id}`, record);
         return;
       }
-      send("usage: /learn pick | review | note <issue> | draft <id> | show <id> | pending | approve <id> --confirm | reject <id> [reason]");
+      send(LEARN_HELP);
     },
   });
 }

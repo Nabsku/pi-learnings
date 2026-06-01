@@ -1,7 +1,7 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { LearningClassification, LearningRecord } from "./types.ts";
 import { classifyIssueWithModel, draftLearning, recommendTarget } from "./draft.ts";
-import { bounded, createLearning, listLearnings, moveLearning, saveLearning } from "./store.ts";
+import { bounded, createLearning, listLearnings, moveLearning, readLearning, saveLearning } from "./store.ts";
 import { applyRepoAgentsRule, resolveRepoAgentsPath } from "./apply.ts";
 import { loadConfig } from "./config.ts";
 
@@ -301,6 +301,63 @@ export async function runDraftReview(root: string, ctx: ExtensionCommandContext)
     return { ok: true, record, message: `rejected: ${record.id}` };
   }
   return { ok: false, message: "Cancelled. Draft left pending." };
+}
+
+function shortLine(text: string, max = 100): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`;
+}
+
+function browseLabel(record: LearningRecord): string {
+  return `${record.status} · ${record.id} · ${classificationLabel(record.classification)} · ${shortLine(record.issue.description)}`;
+}
+
+async function createQuickNote(root: string, issue: string, ctx: ExtensionCommandContext): Promise<{ ok: true; record: LearningRecord; message: string } | { ok: false; message: string }> {
+  const trimmed = issue.trim();
+  if (!trimmed) return { ok: false, message: "Cancelled. No learning created." };
+  const config = loadConfig(root);
+  const classification = await classifyIssueWithModel(root, trimmed, ctx);
+  const target = recommendTarget(classification);
+  if (target.kind === "repo-agents") target.path = config.repoAgentsPath;
+  const record = createLearning(root, { source: { selector: "manual", role: "unknown", excerpt: bounded(trimmed, config.maxExcerptChars) }, issue: { description: bounded(trimmed, 1000) }, classification, recommendedTarget: target });
+  record.draft = await draftLearning(root, record, ctx);
+  saveLearning(root, record);
+  return { ok: true, record, message: `captured: ${record.id}\nno repo rule applied\nnext: /learn` };
+}
+
+export async function runQuickNote(root: string, ctx: ExtensionCommandContext, issue?: string): Promise<{ ok: true; record: LearningRecord; message: string } | { ok: false; message: string }> {
+  if (issue !== undefined) return createQuickNote(root, issue, ctx);
+  if (!ctx.hasUI) return { ok: false, message: "usage: /learn note <what went wrong>" };
+  const prompted = await ctx.ui.input("What went wrong?", "Briefly describe the mistake or behavior to improve.");
+  return createQuickNote(root, prompted ?? "", ctx);
+}
+
+export async function runBrowseLearnings(root: string, ctx: ExtensionCommandContext): Promise<{ ok: true; message: string; record: LearningRecord } | { ok: false; message: string }> {
+  if (!ctx.hasUI) return { ok: false, message: "UI browse unavailable in this mode. Use: /learn pending or /learn show <id>." };
+  const records = (["pending", "applied", "rejected"] as const).flatMap((status) => listLearnings(root, status));
+  if (!records.length) return { ok: false, message: "No learnings found. Use /learn pick or /learn note <issue> first." };
+  const labels = records.map(browseLabel);
+  const pickedLabel = await ctx.ui.select("Browse learnings", labels);
+  if (!pickedLabel) return { ok: false, message: "Cancelled. No learning selected." };
+  const picked = records[labels.indexOf(pickedLabel)];
+  if (!picked) return { ok: false, message: "Cancelled. Selected learning was not found." };
+  const record = readLearning(root, picked.id);
+  await ctx.ui.editor("Learning detail", renderFullDraft(record));
+  return { ok: true, record, message: `shown: ${record.id}` };
+}
+
+export async function runLearningMainMenu(root: string, ctx: ExtensionCommandContext): Promise<{ ok: true; message: string; record?: LearningRecord } | { ok: false; message: string }> {
+  if (!ctx.hasUI) return { ok: false, message: "/learn opens the learning menu when UI is available.\nUse: /learn note <what went wrong>\nAdvanced fallback: /learn review, /learn pending, /learn show <id>, /learn approve <id> --confirm, /learn reject <id> [reason]" };
+  const capture = "Capture from recent turn";
+  const review = "Review pending drafts";
+  const browse = "Browse learnings";
+  const note = "Quick note";
+  const action = await ctx.ui.select("Learning loop", [capture, review, browse, note]);
+  if (action === capture) return runInteractiveLearn(root, ctx);
+  if (action === review) return runDraftReview(root, ctx);
+  if (action === browse) return runBrowseLearnings(root, ctx);
+  if (action === note) return runQuickNote(root, ctx);
+  return { ok: false, message: "Cancelled. No learning action selected." };
 }
 
 export async function runInteractiveLearn(root: string, ctx: ExtensionCommandContext): Promise<{ ok: true; record: LearningRecord; message: string } | { ok: false; message: string }> {

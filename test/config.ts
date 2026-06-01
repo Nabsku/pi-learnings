@@ -52,8 +52,9 @@ await commands.learn.handler("note tests passed claim used no command", { cwd: r
 const noteMessage = messages.at(-1)?.content ?? "";
 const id = /learn_[A-Za-z0-9_Z]+_[a-f0-9]{6}/.exec(noteMessage)?.[0];
 assert(id, "created message should include id");
-assert(noteMessage.includes("pending learning created:"), "note should immediately draft the captured learning");
-assert(noteMessage.includes("Next: /learn review"), "note should send the user to the review queue");
+assert(noteMessage.includes("captured:"), "note should report the captured learning");
+assert(noteMessage.includes("no repo rule applied"), "note should be explicit that no repo rule was applied");
+assert(noteMessage.includes("next: /learn"), "note should send the user to the review queue");
 assert(existsSync(join(root, ".pi/custom-learnings/pending", `${id}.json`)), "custom learningsDir should be used");
 const noteRecord = JSON.parse(readFileSync(join(root, ".pi/custom-learnings/pending", `${id}.json`), "utf8"));
 assert(noteRecord.draft?.proposedText, "note should persist an immediate draft");

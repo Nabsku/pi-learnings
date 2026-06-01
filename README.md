@@ -7,21 +7,24 @@ Approval-gated learning loop for Pi.
 ## Commands
 
 ```text
-/learn pick
-/learn review
+/learn
 /learn note <what went wrong>
-/learn draft <id>
-/learn show <id>
+```
+
+`/learn` is the primary workflow. It opens a TUI menu for capturing from a recent turn, reviewing pending drafts, browsing learnings, or writing a quick note. IDs and direct approve/reject commands are fallback details, not the normal path.
+
+`/learn note <what went wrong>` is the quick-capture path. It classifies and drafts immediately. In UI mode it offers `Review now` or `Keep pending`; in non-UI mode it prints the captured ID and sends you back to `/learn`. It creates a pending learning and proposed rule only; no repo rule is applied until TUI review approval or `/learn approve <id> --confirm`.
+
+Advanced fallback commands remain available for scripts or broken/non-interactive UI:
+
+```text
+/learn review
 /learn pending
+/learn show <id>
+/learn draft <id>
 /learn approve <id> --confirm
 /learn reject <id> [reason]
 ```
-
-`/learn pick` is the preferred interactive path. It opens only when invoked, lets you select a recent turn with longer evidence previews, asks for a short issue description plus optional future behavior, then creates a pending draft. It never writes `AGENTS.md`; approval still happens via `/learn approve <id> --confirm` or the `/learn review` draft picker.
-
-`/learn note <what went wrong>` is the quick-capture path. It classifies and drafts immediately, then sends you to `/learn review` for approval. It creates a pending learning and proposed rule only; no repo rule is applied until review approval or `/learn approve <id> --confirm`.
-
-`/learn review` opens pending drafts, shows a compact picker, then opens the full draft/source context in a scrollable editor before asking to approve, reject, or cancel.
 
 ## Config
 
