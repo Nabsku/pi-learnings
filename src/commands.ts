@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { applyRepoAgentsRule, previewRepoAgentsRule } from "./apply.ts";
+import { applyLearningRule, previewLearningRule } from "./apply.ts";
 import { draftLearning } from "./draft.ts";
 import { runDraftReview, runInteractiveLearn, runLearningMainMenu, runQuickNote } from "./interactive.ts";
 import { listLearnings, moveLearning, readLearning, repoRoot, saveLearning } from "./store.ts";
@@ -28,7 +28,7 @@ const ADVANCED_HELP = [
   "/learn pending",
   "/learn show <id>",
   "/learn draft <id>",
-  "/learn approve <id> --confirm",
+  "/learn approve <id> --confirm | --confirm-global",
   "/learn reject <id> [reason]",
 ].join("\n");
 
@@ -161,10 +161,11 @@ export function registerLearningCommand(pi: ExtensionAPI) {
       }
       if (sub === "approve") {
         const id = rest[0];
-        if (!id) { send("usage: /learn approve <id> --confirm"); return; }
+        if (!id) { send("usage: /learn approve <id> --confirm | --confirm-global"); return; }
         const record = readLearning(root, id);
-        const confirmed = rest.length === 2 && rest[1] === "--confirm";
-        const result = confirmed ? applyRepoAgentsRule(root, record) : previewRepoAgentsRule(root, record);
+        const confirmedRepo = rest.length === 2 && rest[1] === "--confirm";
+        const confirmedGlobal = rest.length === 2 && rest[1] === "--confirm-global";
+        const result = (confirmedRepo || confirmedGlobal) ? applyLearningRule(root, record, { allowGlobal: confirmedGlobal }) : previewLearningRule(root, record);
         if (result.applied) {
           record.appliedAt = new Date().toISOString();
           moveLearning(root, record, "applied");

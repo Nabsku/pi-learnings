@@ -10,6 +10,8 @@ export type LearningLoopConfig = {
   version: 1;
   learningsDir: string;
   repoAgentsPath: string;
+  globalAgentsPath: string;
+  globalSystemPath: string;
   maxExcerptChars: number;
   modelOverrides: {
     draftRule?: ModelOverride;
@@ -21,6 +23,8 @@ export const DEFAULT_CONFIG: LearningLoopConfig = {
   version: 1,
   learningsDir: ".pi/learnings",
   repoAgentsPath: "AGENTS.md",
+  globalAgentsPath: "~/.pi/agent/AGENTS.md",
+  globalSystemPath: "~/.pi/agent/APPEND_SYSTEM.md",
   maxExcerptChars: 4000,
   modelOverrides: {
     draftRule: {
@@ -71,6 +75,16 @@ function safeRepoRelative(root: string, value: unknown, fallback: string): strin
   return raw;
 }
 
+function safeGlobalPiPath(value: unknown, fallback: string): string {
+  const raw = stringValue(value, fallback);
+  const home = process.env.HOME;
+  const expanded = raw.startsWith("~/") && home ? `${home}/${raw.slice(2)}` : raw;
+  const allowedName = fallback.endsWith("APPEND_SYSTEM.md") ? "APPEND_SYSTEM.md" : "AGENTS.md";
+  if (raw === `~/.pi/agent/${allowedName}`) return raw;
+  if (home && expanded === `${home}/.pi/agent/${allowedName}`) return raw;
+  return fallback;
+}
+
 export function loadConfig(root: string): LearningLoopConfig {
   const path = configPath(root);
   if (!existsSync(path)) return { ...DEFAULT_CONFIG };
@@ -79,6 +93,8 @@ export function loadConfig(root: string): LearningLoopConfig {
     version: 1,
     learningsDir: safeRepoRelative(root, parsed.learningsDir, DEFAULT_CONFIG.learningsDir),
     repoAgentsPath: safeRepoRelative(root, parsed.repoAgentsPath, DEFAULT_CONFIG.repoAgentsPath),
+    globalAgentsPath: safeGlobalPiPath(parsed.globalAgentsPath, DEFAULT_CONFIG.globalAgentsPath),
+    globalSystemPath: safeGlobalPiPath(parsed.globalSystemPath, DEFAULT_CONFIG.globalSystemPath),
     maxExcerptChars: numberValue(parsed.maxExcerptChars, DEFAULT_CONFIG.maxExcerptChars),
     modelOverrides: modelOverrides(parsed.modelOverrides),
   };

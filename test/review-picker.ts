@@ -44,17 +44,19 @@ const ctx = {
       }
       if (title.includes("Apply or reject")) {
         assert(options[0] === "Keep pending / Back", "safe/back action should be first");
-        assert(options.includes("Apply rule to AGENTS.md"), "apply action should be explicit about AGENTS.md");
+        assert(options.includes("Apply to project rules (AGENTS.md)"), "apply action should be explicit about AGENTS.md");
+        assert(options.some((option) => option.startsWith("Apply to global Pi rules")), "global apply option should be available but explicit");
+        assert(options.some((option) => option.startsWith("Apply to global Pi system append")), "global APPEND_SYSTEM option should be available but explicit");
         assert(options.includes("Reject draft"), "reject action should be explicit");
-        return "Apply rule to AGENTS.md";
+        return "Apply to project rules (AGENTS.md)";
       }
       if (title.includes("Confirm applying")) {
         assert(title.includes("Will edit: AGENTS.md"), "confirmation should show exact file edit behavior");
         assert(title.includes("Section: ## Agent Learnings"), "confirmation should show target section");
         assert(title.includes("Change: append single bullet if not already present"), "confirmation should show exact change behavior");
         assert(options[0] === "Keep pending / Back", "confirmation safe/back choice should be first");
-        assert(options.includes("Apply rule to AGENTS.md"), "confirmation should require explicit apply");
-        return "Apply rule to AGENTS.md";
+        assert(options.includes("Apply to project rules (AGENTS.md)"), "confirmation should require explicit apply");
+        return "Apply to project rules (AGENTS.md)";
       }
       throw new Error(`unexpected select title: ${title}`);
     },

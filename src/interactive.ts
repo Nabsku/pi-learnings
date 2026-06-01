@@ -2,7 +2,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { LearningClassification, LearningRecord } from "./types.ts";
 import { classifyIssueWithModel, draftLearning, recommendTarget } from "./draft.ts";
 import { bounded, createLearning, listLearnings, moveLearning, readLearning, saveLearning } from "./store.ts";
-import { applyRepoAgentsRule, resolveRepoAgentsPath } from "./apply.ts";
+import { applyLearningRule, resolveLearningTarget } from "./apply.ts";
 import { loadConfig } from "./config.ts";
 
 type MessageEntry = ReturnType<ExtensionCommandContext["sessionManager"]["getEntries"]>[number];
@@ -269,22 +269,30 @@ export async function runDraftReview(root: string, ctx: ExtensionCommandContext)
   if (!record) return { ok: false, message: "Cancelled. Selected draft was not found." };
 
   await ctx.ui.editor("Read-only preview: learning draft", renderFullDraft(record));
-  const resolvedTarget = resolveRepoAgentsPath(root, record);
-  const targetPath = resolvedTarget.ok ? resolvedTarget.relPath : record.recommendedTarget.path;
-  const applyLabel = `Apply rule to ${targetPath}`;
+  const resolvedTarget = resolveLearningTarget(root, record);
+  const config = loadConfig(root);
+  const projectPath = config.repoAgentsPath;
+  const projectLabel = `Apply to project rules (${projectPath})`;
+  const globalAgentsLabel = `Apply to global Pi rules (${config.globalAgentsPath})`;
+  const globalSystemLabel = `Apply to global Pi system append (${config.globalSystemPath})`;
   const backLabel = "Keep pending / Back";
   const rejectLabel = "Reject draft";
-  const action = await ctx.ui.select("Apply or reject this draft", [backLabel, applyLabel, rejectLabel]);
-  if (action === applyLabel) {
-    const target = `${record.recommendedTarget.kind}:${targetPath}`;
+  const action = await ctx.ui.select("Apply or reject this draft", [backLabel, projectLabel, globalAgentsLabel, globalSystemLabel, rejectLabel]);
+  if (action === projectLabel || action === globalAgentsLabel || action === globalSystemLabel) {
+    if (action === globalAgentsLabel) record.recommendedTarget = { kind: "global-agents", path: config.globalAgentsPath };
+    if (action === globalSystemLabel) record.recommendedTarget = { kind: "global-system", path: config.globalSystemPath };
+    if (action === projectLabel) record.recommendedTarget = { kind: "repo-agents", path: config.repoAgentsPath };
+    const selectedTarget = resolveLearningTarget(root, record);
+    const selectedPath = selectedTarget.ok ? selectedTarget.displayPath : record.recommendedTarget.path;
+    const target = `${record.recommendedTarget.kind}:${selectedPath}`;
     const rule = record.draft?.proposedText ?? "(none)";
-    const consequence = `Will edit: ${targetPath}\nSection: ## Agent Learnings\nChange: append single bullet if not already present\nTarget: ${target}\nRule to append: ${rule}`;
+    const consequence = `Will edit: ${selectedPath}\nSection: ## Agent Learnings\nChange: append single bullet if not already present\nTarget: ${target}\n${selectedTarget.ok && selectedTarget.global ? "Scope: GLOBAL Pi rules; affects all projects\n" : ""}Rule to append: ${rule}`;
     const ui = ctx.ui as typeof ctx.ui & { confirm?: (title: string, message: string) => Promise<boolean> };
     const confirmed = ui.confirm
-      ? await ui.confirm(`Confirm applying rule to ${targetPath}`, consequence)
-      : (await ctx.ui.select(`Confirm applying rule to ${targetPath}\n\n${consequence}`, [backLabel, applyLabel])) === applyLabel;
+      ? await ui.confirm(`Confirm applying rule to ${selectedPath}`, consequence)
+      : (await ctx.ui.select(`Confirm applying rule to ${selectedPath}\n\n${consequence}`, [backLabel, action ?? "Apply"])) === action;
     if (!confirmed) return { ok: false, message: "Cancelled. Draft left pending." };
-    const result = applyRepoAgentsRule(root, record);
+    const result = applyLearningRule(root, record, { allowGlobal: selectedTarget.ok && selectedTarget.global });
     if (result.applied) {
       record.appliedAt = new Date().toISOString();
       moveLearning(root, record, "applied");
