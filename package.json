@@ -4,8 +4,8 @@
   "description": "Approval-gated learning capture for Pi: turn concrete mistakes into durable agent rules.",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --allowImportingTsExtensions --skipLibCheck index.ts test/smoke.ts test/interactive.ts test/config.ts test/model-classify.ts test/model-draft.ts test/review-picker.ts test/safety.ts test/ux-polish.ts test/learn-main-menu.ts test/global-target.ts test/picker-label-unique.ts test/picker-quality.ts test/picker-specific-tool.ts test/picker-semantic-match.ts test/subagent-picker.ts",
-    "test": "tsx test/smoke.ts && tsx test/interactive.ts && tsx test/config.ts && tsx test/model-classify.ts && tsx test/model-draft.ts && tsx test/review-picker.ts && tsx test/safety.ts && tsx test/ux-polish.ts && tsx test/learn-main-menu.ts && tsx test/global-target.ts && tsx test/picker-label-unique.ts && tsx test/picker-quality.ts && tsx test/picker-specific-tool.ts && tsx test/picker-semantic-match.ts && tsx test/subagent-picker.ts",
+    "typecheck": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --allowImportingTsExtensions --skipLibCheck index.ts test/smoke.ts test/interactive.ts test/config.ts test/model-classify.ts test/model-draft.ts test/review-picker.ts test/safety.ts test/ux-polish.ts test/learn-main-menu.ts test/global-target.ts test/picker-label-unique.ts test/picker-quality.ts test/picker-specific-tool.ts test/picker-semantic-match.ts test/subagent-picker.ts test/subagent-transcript-picker.ts",
+    "test": "tsx test/smoke.ts && tsx test/interactive.ts && tsx test/config.ts && tsx test/model-classify.ts && tsx test/model-draft.ts && tsx test/review-picker.ts && tsx test/safety.ts && tsx test/ux-polish.ts && tsx test/learn-main-menu.ts && tsx test/global-target.ts && tsx test/picker-label-unique.ts && tsx test/picker-quality.ts && tsx test/picker-specific-tool.ts && tsx test/picker-semantic-match.ts && tsx test/subagent-picker.ts && tsx test/subagent-transcript-picker.ts",
     "test:ci": "pnpm run typecheck && pnpm test && npm pack --dry-run && git diff --check"
   },
   "keywords": [

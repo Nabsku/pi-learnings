@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { LearningClassification, LearningRecord } from "./types.ts";
 import { classifyIssueWithModel, draftLearning, recommendTarget } from "./draft.ts";
@@ -75,6 +77,54 @@ function sourceTurnIdFromMessage(message: unknown): string | undefined {
 
 function sourceFromMessage(message: unknown): PickableTurn["source"] {
   return isSubagentMessage(message) ? "subagent" : "session";
+}
+
+function outputFileFromMessage(message: unknown): string | undefined {
+  if (!isSubagentMessage(message)) return undefined;
+  const details = (message as { details?: Record<string, unknown> }).details;
+  const outputFile = details?.outputFile;
+  return typeof outputFile === "string" && outputFile.trim() ? outputFile.trim() : undefined;
+}
+
+function roleFromTranscriptEntry(entry: Record<string, unknown>): PickableTurn["role"] {
+  const message = entry.message;
+  if (message && typeof message === "object" && "role" in message) {
+    const role = String((message as { role?: unknown }).role);
+    if (role === "assistant" || role === "tool" || role === "user") return role;
+  }
+  if (entry.type === "assistant") return "assistant";
+  if (entry.type === "toolResult") return "tool";
+  if (entry.type === "user") return "user";
+  return "unknown";
+}
+
+function transcriptExcerpt(entry: Record<string, unknown>): string {
+  const message = entry.message as { content?: unknown; output?: string; command?: string } | undefined;
+  return bounded(textFromContent(message?.content) || message?.output || message?.command || "(no text)", 1200).replace(/\s+/g, " ").trim();
+}
+
+function readSubagentTranscriptTurns(outputFile: string | undefined, cwd: string, notificationId: string, fallbackAgentId?: string): RawTurn[] {
+  if (!outputFile) return [];
+  const path = isAbsolute(outputFile) ? outputFile : resolve(cwd, outputFile);
+  if (!existsSync(path)) return [];
+  try {
+    return readFileSync(path, "utf8")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line, index) => {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        const role = roleFromTranscriptEntry(parsed);
+        const excerpt = transcriptExcerpt(parsed);
+        const agentId = typeof parsed.agentId === "string" && parsed.agentId.trim() ? parsed.agentId.trim() : fallbackAgentId;
+        const timestamp = typeof parsed.timestamp === "string" ? parsed.timestamp : new Date(0).toISOString();
+        const turn: RawTurn = { id: `${notificationId}:${agentId ?? "subagent"}:${index}`, role, timestamp, excerpt, source: "subagent" };
+        if (agentId) turn.sourceTurnId = agentId;
+        return turn;
+      })
+      .filter((turn) => turn.role !== "unknown" && Boolean(turn.excerpt));
+  } catch {
+    return [];
+  }
 }
 
 function issueSignal(text: string): boolean {
@@ -185,15 +235,17 @@ function suggestedIssue(turn: PickableTurn): string {
 
 export function recentPickableTurns(ctx: ExtensionCommandContext, limit = 18): PickableTurn[] {
   const entries = ctx.sessionManager.getEntries();
+  const cwd = typeof (ctx as { cwd?: unknown }).cwd === "string" ? (ctx as { cwd: string }).cwd : process.cwd();
   const rawTurns: RawTurn[] = entries
     .filter((entry) => entry.type === "message")
-    .map((entry) => {
+    .flatMap((entry) => {
       const role = roleFromMessage(entry.message);
       const excerpt = excerptFromEntry(entry);
       const sourceTurnId = sourceTurnIdFromMessage(entry.message);
       const turn: RawTurn = { id: entry.id, role, timestamp: entry.timestamp, excerpt, source: sourceFromMessage(entry.message) };
       if (sourceTurnId) turn.sourceTurnId = sourceTurnId;
-      return turn;
+      const transcriptTurns = readSubagentTranscriptTurns(outputFileFromMessage(entry.message), cwd, entry.id, sourceTurnId);
+      return [turn, ...transcriptTurns];
     })
     .filter((turn): turn is RawTurn => Boolean(turn.excerpt) && turn.role !== "unknown");
 
