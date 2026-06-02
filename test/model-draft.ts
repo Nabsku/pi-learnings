@@ -12,7 +12,7 @@ mkdirSync(join(root, ".pi"), { recursive: true });
 const customLearningPrompt = "Write terse repo rules for this team. Return JSON only.";
 writeFileSync(join(root, ".pi/learnings.json"), JSON.stringify({
   version: 1,
-  learningPrompt: customLearningPrompt,
+  prompt: customLearningPrompt,
   modelOverrides: {
     draftRule: { model: "fake-provider/fake-model", thinkingLevel: "high" },
   },

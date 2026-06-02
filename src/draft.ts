@@ -132,14 +132,14 @@ function parseDraftResponse(text: string, fallback: LearningDraft): LearningDraf
   }
 }
 
-async function modelDraft(root: string, record: LearningRecord, fallback: LearningDraft, override: ModelOverride | undefined, learningPrompt: string | undefined, ctx: ExtensionContext, deps: DraftLearningDeps): Promise<LearningDraft | undefined> {
+async function modelDraft(root: string, record: LearningRecord, fallback: LearningDraft, override: ModelOverride | undefined, prompt: string | undefined, ctx: ExtensionContext, deps: DraftLearningDeps): Promise<LearningDraft | undefined> {
   const selected = selectModel(ctx, override);
   if (!selected) return undefined;
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(selected.model);
   if (!auth.ok) return undefined;
   const complete = deps.complete ?? completeSimple;
   const response = await complete(selected.model, {
-    systemPrompt: learningPrompt ?? DEFAULT_LEARNING_PROMPT,
+    systemPrompt: prompt ?? DEFAULT_LEARNING_PROMPT,
     messages: [{
       role: "user",
       timestamp: Date.now(),
@@ -164,5 +164,5 @@ export async function draftLearning(root: string, record: LearningRecord, ctx?: 
   const config = loadConfig(root);
   const fallback = deterministicDraft(root, record);
   if (!ctx?.modelRegistry || record.classification === "transient") return fallback;
-  return await modelDraft(root, record, fallback, config.modelOverrides.draftRule, config.learningPrompt, ctx, deps) ?? fallback;
+  return await modelDraft(root, record, fallback, config.modelOverrides.draftRule, config.prompt, ctx, deps) ?? fallback;
 }

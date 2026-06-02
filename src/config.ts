@@ -13,7 +13,7 @@ export type LearningLoopConfig = {
   globalAgentsPath: string;
   globalSystemPath: string;
   maxExcerptChars: number;
-  learningPrompt?: string;
+  prompt?: string;
   modelOverrides: {
     draftRule?: ModelOverride;
     classifyIssue?: ModelOverride;
@@ -88,7 +88,7 @@ export function loadConfig(root: string): LearningLoopConfig {
     globalAgentsPath: safeGlobalPiPath(parsed.globalAgentsPath, DEFAULT_CONFIG.globalAgentsPath),
     globalSystemPath: safeGlobalPiPath(parsed.globalSystemPath, DEFAULT_CONFIG.globalSystemPath),
     maxExcerptChars: numberValue(parsed.maxExcerptChars, DEFAULT_CONFIG.maxExcerptChars),
-    learningPrompt: typeof parsed.learningPrompt === "string" && parsed.learningPrompt.trim() ? parsed.learningPrompt.trim() : undefined,
+    prompt: typeof parsed.prompt === "string" && parsed.prompt.trim() ? parsed.prompt.trim() : undefined,
     modelOverrides: modelOverrides(parsed.modelOverrides),
   };
 }

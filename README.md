@@ -115,7 +115,7 @@ Default shape:
   "globalAgentsPath": "~/.pi/agent/AGENTS.md",
   "globalSystemPath": "~/.pi/agent/APPEND_SYSTEM.md",
   "maxExcerptChars": 4000,
-  "learningPrompt": "Draft one durable, repo-local agent learning rule. Return only JSON with proposedText, rationale, and risk (low|medium|high).",
+  "prompt": "Draft one durable, repo-local agent learning rule. Return only JSON with proposedText, rationale, and risk (low|medium|high).",
   "modelOverrides": {}
 }
 ```
@@ -128,7 +128,7 @@ Fields:
 - `globalAgentsPath`: exact global Pi `AGENTS.md` path allowed for global rule approval. Default: `~/.pi/agent/AGENTS.md`.
 - `globalSystemPath`: exact global Pi `APPEND_SYSTEM.md` path allowed for global system approval. Default: `~/.pi/agent/APPEND_SYSTEM.md`.
 - `maxExcerptChars`: maximum stored source excerpt length. Default: `4000`.
-- `learningPrompt`: optional system prompt for model-backed rule drafting. Leave it out to use the built-in prompt. Set it when you want your own style, stricter schema wording, or different rule-writing taste.
+- `prompt`: optional system prompt for model-backed rule drafting. Leave it out to use the built-in prompt. Set it when you want your own style, stricter schema wording, or different rule-writing taste.
 - `modelOverrides`: optional per-operation model preferences. Use `{}` to use Pi's normal model path.
 - `modelOverrides.draftRule`: optional model settings for `/learn draft`, `/learn pick`, and `learning_draft_rule`.
 - `modelOverrides.classifyIssue`: optional model settings for `/learn note`, `/learn pick`, and `learning_mark_issue`.
@@ -159,7 +159,7 @@ Example: explicit model overrides
   "globalAgentsPath": "~/.pi/agent/AGENTS.md",
   "globalSystemPath": "~/.pi/agent/APPEND_SYSTEM.md",
   "maxExcerptChars": 4000,
-  "learningPrompt": "Write terse repo-local agent rules. Return JSON only with proposedText, rationale, and risk.",
+  "prompt": "Write terse repo-local agent rules. Return JSON only with proposedText, rationale, and risk.",
   "modelOverrides": {
     "draftRule": {
       "model": "openai-codex/gpt-5.5",
