@@ -313,6 +313,22 @@ function renderReview(record: LearningRecord): string {
   ].filter((line): line is string => line !== undefined).join("\n");
 }
 
+function renderDuplicateBlock(record: LearningRecord): string {
+  const candidates = record.draft?.duplicateCheck.similar ?? [];
+  if (!candidates.length) return "duplicate check:\nnone found";
+  const top = candidates[0]!;
+  return [
+    "duplicate check:",
+    "similar existing rules found",
+    "",
+    "top match:",
+    `${top.path}${top.line ? `:${top.line}` : ""} · score ${top.score}`,
+    top.existingText,
+    "",
+    `recommended: ${record.draft?.duplicateCheck.suggestedAction ?? "update"}`,
+  ].join("\n");
+}
+
 function renderFullDraft(record: LearningRecord): string {
   return [
     `# ${record.id}`,
@@ -321,6 +337,7 @@ function renderFullDraft(record: LearningRecord): string {
     `target: ${record.recommendedTarget.kind}:${record.recommendedTarget.path}`,
     `risk: ${record.draft?.risk ?? "(none)"}`,
     `duplicate: ${record.draft?.duplicateCheck.similarExistingRule ?? "none found"}`,
+    renderDuplicateBlock(record),
     `searched paths: ${record.draft?.duplicateCheck.searched.join(", ") || "(none)"}`,
     "",
     "issue:",
@@ -343,7 +360,8 @@ function renderFullDraft(record: LearningRecord): string {
 
 function formatDraftLabel(record: LearningRecord): string {
   const rule = record.draft?.proposedText || "(no draft yet)";
-  return `${record.id} · ${classificationLabel(record.classification)} · ${bounded(rule, 180).replace(/\s+/g, " ")} · ${bounded(record.issue.description, 120).replace(/\s+/g, " ")}`;
+  const prefix = record.draft?.duplicateCheck.similar?.length ? "[similar] " : "";
+  return `${prefix}${record.id} · ${classificationLabel(record.classification)} · ${bounded(rule, 180).replace(/\s+/g, " ")} · ${bounded(record.issue.description, 120).replace(/\s+/g, " ")}`;
 }
 
 function classificationLabel(classification: LearningClassification): string {
@@ -381,8 +399,38 @@ export async function runDraftReview(root: string, ctx: ExtensionCommandContext)
   const globalSystemLabel = `Apply to global Pi system append (${config.globalSystemPath})`;
   const backLabel = "Keep pending / Back";
   const rejectLabel = "Reject draft";
-  const action = await ctx.ui.select("Apply or reject this draft", [backLabel, projectLabel, globalAgentsLabel, globalSystemLabel, rejectLabel]);
-  if (action === projectLabel || action === globalAgentsLabel || action === globalSystemLabel) {
+  const updateLabel = "Update existing rule";
+  const appendLabel = "Append as new rule";
+  const similar = record.draft?.duplicateCheck.similar ?? [];
+  const action = similar.length
+    ? await ctx.ui.select("Similar existing rules found", [updateLabel, appendLabel, "Reject as duplicate", backLabel])
+    : await ctx.ui.select("Apply or reject this draft", [backLabel, projectLabel, globalAgentsLabel, globalSystemLabel, rejectLabel]);
+  if (action === updateLabel) {
+    record.recommendedTarget = { kind: "repo-agents", path: config.repoAgentsPath };
+    const candidate = similar[0]!;
+    const selectedPath = `${candidate.path}${candidate.line ? `:${candidate.line}` : ""}`;
+    const rule = record.draft?.proposedText ?? "(none)";
+    const consequence = `Will edit: ${candidate.path}\nChange: replace one existing bullet in ## Agent Learnings\nExisting line: ${candidate.line ?? "unknown"}\n\nBefore:\n${candidate.existingText}\n\nAfter:\n${rule}\n\nThis will not append a new bullet.`;
+    await ctx.ui.editor("Read-only preview: update existing rule", consequence);
+    const ui = ctx.ui as typeof ctx.ui & { confirm?: (title: string, message: string) => Promise<boolean> };
+    const confirmed = ui.confirm
+      ? await ui.confirm(`Confirm updating rule in ${candidate.path}`, consequence)
+      : (await ctx.ui.select(`Confirm updating rule in ${candidate.path}\n\n${consequence}`, [backLabel, updateLabel])) === updateLabel;
+    if (!confirmed) return { ok: false, message: "Cancelled. Draft left pending." };
+    const result = applyLearningRule(root, record, { update: candidate });
+    if (result.applied) {
+      record.appliedAt = new Date().toISOString();
+      moveLearning(root, record, "applied");
+    }
+    return { ok: true, record, message: result.message || `Updated existing rule in ${selectedPath}` };
+  }
+  if (action === "Reject as duplicate") {
+    record.rejectionReason = "Duplicate / already covered";
+    moveLearning(root, record, "rejected");
+    return { ok: true, record, message: `rejected duplicate: ${record.id}` };
+  }
+  if (action === appendLabel) record.recommendedTarget = { kind: "repo-agents", path: config.repoAgentsPath };
+  if (action === projectLabel || action === globalAgentsLabel || action === globalSystemLabel || action === appendLabel) {
     if (action === globalAgentsLabel) record.recommendedTarget = { kind: "global-agents", path: config.globalAgentsPath };
     if (action === globalSystemLabel) record.recommendedTarget = { kind: "global-system", path: config.globalSystemPath };
     if (action === projectLabel) record.recommendedTarget = { kind: "repo-agents", path: config.repoAgentsPath };

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { completeSimple } from "@earendil-works/pi-ai";
 import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import type { LearningClassification, LearningDraft, LearningRecord, LearningTargetKind } from "./types.ts";
+import type { LearningClassification, LearningDraft, LearningRecord, LearningTargetKind, SimilarLearningCandidate } from "./types.ts";
 import { loadConfig, type ModelOverride } from "./config.ts";
 
 const CLASSIFIERS: Array<{ classification: LearningClassification; terms: RegExp; rule: string; rationale: string }> = [
@@ -84,10 +84,49 @@ function readIfExists(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
-function similarRule(existing: string, proposed: string): string | null {
-  const normalized = proposed.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((word) => word.length > 3);
-  const hits = normalized.filter((word) => existing.toLowerCase().includes(word));
-  return hits.length >= Math.min(5, normalized.length) ? proposed : null;
+function tokenize(text: string): string[] {
+  return text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((word) => word.length > 3);
+}
+
+function similarityScore(existing: string, proposed: string): number {
+  const proposedTokens = [...new Set(tokenize(proposed))];
+  if (!proposedTokens.length) return 0;
+  const existingTokens = new Set(tokenize(existing));
+  const hits = proposedTokens.filter((word) => existingTokens.has(word)).length;
+  return hits / proposedTokens.length;
+}
+
+export function findSimilarRules(root: string, searched: string[], proposed: string): SimilarLearningCandidate[] {
+  return searched.flatMap((rel) => {
+    const content = readIfExists(join(root, rel));
+    return content.split(/\r?\n/).flatMap((line, index) => {
+      const existingText = line.trim();
+      if (!existingText.startsWith("- ")) return [];
+      const score = existingText === proposed ? 1 : similarityScore(existingText, proposed);
+      if (score < 0.45) return [];
+      const candidate: SimilarLearningCandidate = {
+        id: `${rel}:${index + 1}`,
+        path: rel,
+        section: "Agent Learnings",
+        line: index + 1,
+        existingText,
+        score: Number(score.toFixed(2)),
+        reason: existingText === proposed ? "exact duplicate" : "shares key rule terms",
+      };
+      return [candidate];
+    });
+  }).sort((a, b) => b.score - a.score);
+}
+
+function duplicateCheck(root: string, searched: string[], proposed: string): LearningDraft["duplicateCheck"] {
+  const similar = findSimilarRules(root, searched, proposed);
+  const top = similar[0];
+  return {
+    searched,
+    similarExistingRule: top?.existingText ?? null,
+    similar,
+    suggestedAction: top ? (top.score >= 0.98 ? "reject" : "update") : "append",
+  };
 }
 
 function deterministicDraft(root: string, record: LearningRecord): LearningDraft {
@@ -96,12 +135,11 @@ function deterministicDraft(root: string, record: LearningRecord): LearningDraft
   const classifier = CLASSIFIERS.find((item) => item.classification === classification);
   const proposedText = classifier?.rule ?? "- When a mistake is identified, generalize the root behavior into a short rule and verify the rule is not already covered before adding it.";
   const searched = [config.repoAgentsPath, ".pi/workflows.json"];
-  const existing = searched.map((rel) => readIfExists(join(root, rel))).join("\n");
-  const duplicate = similarRule(existing, proposedText);
+  const duplicates = duplicateCheck(root, searched, proposedText);
   if (classification === "transient") {
-    return { section: "Learning Notes", proposedText: "", rationale: "This looks transient or environment-specific; save as a note instead of adding prompt policy.", duplicateCheck: { searched, similarExistingRule: null }, risk: "medium" };
+    return { section: "Learning Notes", proposedText: "", rationale: "This looks transient or environment-specific; save as a note instead of adding prompt policy.", duplicateCheck: { searched, similarExistingRule: null, similar: [], suggestedAction: "append" }, risk: "medium" };
   }
-  return { section: "Agent Learnings", proposedText, rationale: classifier?.rationale ?? "The issue should become a concise durable behavior rule.", duplicateCheck: { searched, similarExistingRule: duplicate }, risk: duplicate ? "medium" : "low" };
+  return { section: "Agent Learnings", proposedText, rationale: classifier?.rationale ?? "The issue should become a concise durable behavior rule.", duplicateCheck: duplicates, risk: duplicates.similar?.length ? "medium" : "low" };
 }
 
 function parseModelRef(ref: string | undefined): { provider: string; modelId: string } | undefined {
@@ -164,5 +202,10 @@ export async function draftLearning(root: string, record: LearningRecord, ctx?: 
   const config = loadConfig(root);
   const fallback = deterministicDraft(root, record);
   if (!ctx?.modelRegistry || record.classification === "transient") return fallback;
-  return await modelDraft(root, record, fallback, config.modelOverrides.draftRule, config.prompt, ctx, deps) ?? fallback;
+  const drafted = await modelDraft(root, record, fallback, config.modelOverrides.draftRule, config.prompt, ctx, deps) ?? fallback;
+  if (drafted.proposedText) {
+    drafted.duplicateCheck = duplicateCheck(root, drafted.duplicateCheck.searched, drafted.proposedText);
+    drafted.risk = drafted.duplicateCheck.similar?.length && drafted.risk === "low" ? "medium" : drafted.risk;
+  }
+  return drafted;
 }

@@ -65,6 +65,7 @@ The main flow. Opens the TUI for:
 - picking one or more recent suspicious Pi turns
 - picking completed `pi-subagents` results from the session, including bad turns inside their transcript files when available
 - reviewing pending drafts
+- spotting similar existing rules and updating them instead of appending near-duplicates
 - browsing past learnings
 - writing a quick note
 
@@ -95,6 +96,8 @@ Useful for scripts, broken terminals, or non-interactive sessions:
 /learn show <id>
 /learn draft <id>
 /learn approve <id> --confirm
+/learn approve <id> --confirm --update
+/learn approve <id> --confirm --append
 /learn reject <id> [reason]
 ```
 

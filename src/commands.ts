@@ -163,9 +163,14 @@ export function registerLearningCommand(pi: ExtensionAPI) {
         const id = rest[0];
         if (!id) { send("usage: /learn approve <id> --confirm | --confirm-global"); return; }
         const record = readLearning(root, id);
-        const confirmedRepo = rest.length === 2 && rest[1] === "--confirm";
-        const confirmedGlobal = rest.length === 2 && rest[1] === "--confirm-global";
-        const result = (confirmedRepo || confirmedGlobal) ? applyLearningRule(root, record, { allowGlobal: confirmedGlobal }) : previewLearningRule(root, record);
+        const flags = rest.slice(1);
+        const confirmedRepo = flags[0] === "--confirm" && flags.slice(1).every((flag) => flag === "--update" || flag === "--append");
+        const confirmedGlobal = flags[0] === "--confirm-global" && flags.slice(1).every((flag) => flag === "--update" || flag === "--append");
+        const wantsUpdate = flags.includes("--update");
+        const wantsAppend = flags.includes("--append");
+        const result = (confirmedRepo || confirmedGlobal)
+          ? applyLearningRule(root, record, { allowGlobal: confirmedGlobal, mode: wantsUpdate ? "update" : wantsAppend ? "append" : undefined })
+          : previewLearningRule(root, record);
         if (result.applied) {
           record.appliedAt = new Date().toISOString();
           moveLearning(root, record, "applied");

@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import type { LearningRecord } from "./types.ts";
+import type { LearningRecord, SimilarLearningCandidate } from "./types.ts";
 import { loadConfig } from "./config.ts";
 
 export type ApplyResult = { applied: boolean; path: string; message: string };
-export type ApplyOptions = { allowGlobal?: boolean };
+export type ApplyOptions = { allowGlobal?: boolean; update?: SimilarLearningCandidate; mode?: "append" | "update" };
 
 type ResolvedTarget = { ok: true; absPath: string; displayPath: string; relPath: string; global: boolean } | { ok: false; message: string; relPath: string; global: boolean };
 
@@ -66,6 +66,16 @@ export function previewLearningRule(root: string, record: LearningRecord): Apply
   return { applied: false, path: target.displayPath, message: `Preview only; no ${scope} applied yet. Would apply ${record.id} to ${target.displayPath}:\n${record.draft.proposedText}\n\n${confirm}` };
 }
 
+function replaceExistingRule(current: string, proposed: string, candidate: SimilarLearningCandidate): { ok: true; updated: string } | { ok: false; message: string } {
+  const lines = current.split(/\r?\n/);
+  const lineIndex = typeof candidate.line === "number" ? candidate.line - 1 : lines.findIndex((line) => line.trim() === candidate.existingText.trim());
+  if (lineIndex < 0 || lines[lineIndex]?.trim() !== candidate.existingText.trim()) {
+    return { ok: false, message: "Cancelled. Existing rule changed since preview; draft left pending." };
+  }
+  lines[lineIndex] = proposed;
+  return { ok: true, updated: lines.join("\n") };
+}
+
 export function applyLearningRule(root: string, record: LearningRecord, options: ApplyOptions = {}): ApplyResult {
   if (record.status !== "pending") return { applied: false, path: "", message: `Learning ${record.id} is ${record.status}, not pending.` };
   if (!record.draft?.proposedText.trim()) return { applied: false, path: "", message: "No proposed rule to apply." };
@@ -73,6 +83,18 @@ export function applyLearningRule(root: string, record: LearningRecord, options:
   if (!target.ok) return { applied: false, path: target.relPath, message: target.message };
   if (target.global && !options.allowGlobal) return { applied: false, path: target.displayPath, message: `Global Pi writes require explicit confirmation. Run: /learn approve ${record.id} --confirm-global` };
   const current = existsSync(target.absPath) ? readFileSync(target.absPath, "utf8") : "# Instructions\n";
+  if (options.update || options.mode === "update") {
+    const candidate = options.update ?? record.draft.duplicateCheck.similar?.[0];
+    if (!candidate) return { applied: false, path: target.displayPath, message: "No similar rule candidate selected for update." };
+    if (candidate.path !== target.displayPath && candidate.path !== target.relPath) {
+      return { applied: false, path: target.displayPath, message: `Cancelled. Update candidate path ${candidate.path} does not match target ${target.displayPath}; draft left pending.` };
+    }
+    const replaced = replaceExistingRule(current, record.draft.proposedText, candidate);
+    if (!replaced.ok) return { applied: false, path: target.displayPath, message: replaced.message };
+    mkdirSync(dirname(target.absPath), { recursive: true });
+    writeFileSync(target.absPath, `${replaced.updated.trimEnd()}\n`, "utf8");
+    return { applied: true, path: target.displayPath, message: `Updated existing rule for ${record.id} in ${target.displayPath}` };
+  }
   if (current.includes(record.draft.proposedText)) return { applied: false, path: target.displayPath, message: "Rule already exists; not duplicated." };
   const withSection = ensureAgentLearningsSection(current);
   const updated = withSection.replace(/^## Agent Learnings\s*$/m, `## Agent Learnings\n${record.draft.proposedText}`);

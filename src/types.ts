@@ -9,11 +9,26 @@ export type LearningSource = {
   excerpt: string;
 };
 
+export type SimilarLearningCandidate = {
+  id: string;
+  path: string;
+  section: string;
+  line?: number;
+  existingText: string;
+  score: number;
+  reason: string;
+};
+
 export type LearningDraft = {
   section: string;
   proposedText: string;
   rationale: string;
-  duplicateCheck: { searched: string[]; similarExistingRule: string | null };
+  duplicateCheck: {
+    searched: string[];
+    similarExistingRule: string | null;
+    similar?: SimilarLearningCandidate[];
+    suggestedAction?: "append" | "update" | "reject";
+  };
   risk: "low" | "medium" | "high";
 };
 
