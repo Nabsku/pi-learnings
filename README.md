@@ -1,33 +1,45 @@
 # pi-learnings
 
-Approval-gated learning capture for Pi.
+Teach Pi from the mistakes it actually made.
 
-`/learn` turns a concrete Pi mistake into a proposed durable rule. It drafts first, shows the target and proposed text, and only writes after explicit approval.
+`/learn` turns a concrete bad agent turn into a proposed rule. It does not quietly mutate your repo, rewrite global prompts, or let a model bless its own homework. It drafts. You review. Then you approve or reject.
 
-## Quickstart
+Good for stuff like:
 
-Install from GitHub in Pi:
+```text
+Claimed tests passed without running the test command
+Used stale log output as evidence
+Edited the wrong AGENTS.md
+```
+
+The point is simple: capture the lesson while the evidence is fresh, but keep durable instructions under human control.
+
+## Install
+
+Install the plugin in Pi:
 
 ```text
 pi install git:github.com/Nabsku/pi-learnings
 /reload
 ```
 
-Capture something concrete that went wrong:
+Then record a mistake:
 
 ```text
 /learn note Claimed tests passed without running the test command
 ```
 
-Then open the review flow:
+Review it:
 
 ```text
 /learn
 ```
 
-From the TUI, review the proposed rule, inspect the target file, edit if needed, and approve or reject it. Approval writes the rule; capture/draft/list tools never do.
+The TUI shows the proposed rule, the target file, and the evidence. Edit the draft if needed. Approve it only if it deserves to become instruction.
 
-Default files created in the current repo:
+## What it writes
+
+By default, the plugin creates these files in the current repo:
 
 ```text
 .pi/learnings.json
@@ -36,20 +48,45 @@ Default files created in the current repo:
 .pi/learnings/rejected/<id>.json
 ```
 
-Approved repo-local rules are inserted into `AGENTS.md` under `## Agent Learnings` unless `repoAgentsPath` points somewhere else.
-
-## Commands
+Approved repo-local rules go into `AGENTS.md` under:
 
 ```text
-/learn
-/learn note <what went wrong>
+## Agent Learnings
 ```
 
-`/learn` is the primary workflow. It opens a TUI menu for capturing from a recent turn, reviewing pending drafts, browsing learnings, or writing a quick note. IDs and direct approve/reject commands are fallback details, not the normal path.
+You can point repo-local rules somewhere else with `repoAgentsPath`.
 
-`/learn note <what went wrong>` is the quick-capture path. It classifies and drafts immediately. In UI mode it offers `Review now` or `Keep pending`; in non-UI mode it prints the captured ID and sends you back to `/learn`. It creates a pending learning and proposed rule only; no repo rule is applied until TUI review approval or `/learn approve <id> --confirm`.
+## The workflow
 
-Advanced fallback commands remain available for scripts or broken/non-interactive UI:
+### `/learn`
+
+The main flow. Opens the TUI for:
+
+- picking a recent suspicious turn
+- reviewing pending drafts
+- browsing past learnings
+- writing a quick note
+
+Use this most of the time.
+
+### `/learn note <what went wrong>`
+
+Fast capture. It classifies the issue and drafts a rule immediately.
+
+In UI mode, it offers:
+
+```text
+Review now
+Keep pending
+```
+
+In non-UI mode, it prints the captured ID and sends you back to `/learn`.
+
+It does not apply the rule. It only creates a pending learning.
+
+### Fallback commands
+
+Useful for scripts, broken terminals, or non-interactive sessions:
 
 ```text
 /learn review
@@ -62,48 +99,13 @@ Advanced fallback commands remain available for scripts or broken/non-interactiv
 
 ## Config
 
-Config is created automatically when the plugin loads. The only supported config path is `.pi/learnings.json`:
+Config is created automatically when the plugin loads. The supported config file is:
 
-```json
-{
-  "version": 1,
-  "learningsDir": ".pi/learnings",
-  "repoAgentsPath": "AGENTS.md",
-  "globalAgentsPath": "~/.pi/agent/AGENTS.md",
-  "globalSystemPath": "~/.pi/agent/APPEND_SYSTEM.md",
-  "maxExcerptChars": 4000,
-  "modelOverrides": {
-    "draftRule": {
-      "model": "provider/model-id",
-      "thinkingLevel": "minimal"
-    },
-    "classifyIssue": {
-      "model": "provider/model-id",
-      "thinkingLevel": "minimal"
-    }
-  }
-}
+```text
+.pi/learnings.json
 ```
 
-Schema:
-
-- `version`: must be `1`.
-- `learningsDir`: repo-relative directory for pending/applied/rejected learning records. Default: `.pi/learnings`.
-- `repoAgentsPath`: repo-relative file that approved repo-local rules are written to. Default: `AGENTS.md`.
-- `globalAgentsPath`: exact global Pi `AGENTS.md` path allowed for explicit global-rule approval. Default: `~/.pi/agent/AGENTS.md`.
-- `globalSystemPath`: exact global Pi `APPEND_SYSTEM.md` path allowed for explicit global-system approval. Default: `~/.pi/agent/APPEND_SYSTEM.md`.
-- `maxExcerptChars`: maximum stored source excerpt length. Default: `4000`.
-- `modelOverrides`: optional per-operation model preferences for model-backed learning steps. Use `{}` to use the user's normal Pi/default model path.
-- `modelOverrides.draftRule`: optional model settings for `/learn draft`, `/learn pick`, and `learning_draft_rule`.
-- `modelOverrides.classifyIssue`: optional model settings for `/learn note`, `/learn pick`, and `learning_mark_issue`.
-- `modelOverrides.*.model`: optional model reference in the format Pi's model registry accepts, for example `openai-codex/gpt-5.5`.
-- `modelOverrides.*.thinkingLevel`: optional reasoning level. Allowed values: `minimal`, `low`, `medium`, `high`, `xhigh`.
-
-If a configured model cannot be resolved/authenticated or returns invalid JSON, the plugin falls back to deterministic local heuristics. Unsafe repo paths that escape the repo are ignored and fall back to defaults. Global Pi paths are only accepted when they resolve to the configured `~/.pi/agent/...` files.
-
-Examples:
-
-Example: default config using the current Pi model
+Default shape:
 
 ```json
 {
@@ -116,6 +118,20 @@ Example: default config using the current Pi model
   "modelOverrides": {}
 }
 ```
+
+Fields:
+
+- `version`: must be `1`.
+- `learningsDir`: repo-relative directory for pending, applied, and rejected learning records. Default: `.pi/learnings`.
+- `repoAgentsPath`: repo-relative file for approved repo-local rules. Default: `AGENTS.md`.
+- `globalAgentsPath`: exact global Pi `AGENTS.md` path allowed for global rule approval. Default: `~/.pi/agent/AGENTS.md`.
+- `globalSystemPath`: exact global Pi `APPEND_SYSTEM.md` path allowed for global system approval. Default: `~/.pi/agent/APPEND_SYSTEM.md`.
+- `maxExcerptChars`: maximum stored source excerpt length. Default: `4000`.
+- `modelOverrides`: optional per-operation model preferences. Use `{}` to use Pi's normal model path.
+- `modelOverrides.draftRule`: optional model settings for `/learn draft`, `/learn pick`, and `learning_draft_rule`.
+- `modelOverrides.classifyIssue`: optional model settings for `/learn note`, `/learn pick`, and `learning_mark_issue`.
+- `modelOverrides.*.model`: model reference in the format Pi accepts, for example `openai-codex/gpt-5.5`.
+- `modelOverrides.*.thinkingLevel`: optional reasoning level: `minimal`, `low`, `medium`, `high`, or `xhigh`.
 
 Example: repo-local rules file
 
@@ -154,16 +170,27 @@ Example: explicit model overrides
 }
 ```
 
-## Files touched
+If a configured model cannot be resolved, cannot authenticate, or returns invalid JSON, the plugin falls back to deterministic local heuristics. Repo paths that escape the repo are ignored and replaced with safe defaults. Global Pi paths are only accepted when they resolve to the configured `~/.pi/agent/...` files.
 
-- Creates `.pi/learnings.json` during plugin resource discovery if no config exists.
-- Creates learning records under `.pi/learnings/` by default.
-- Writes approved repo-local rules to the configured repo agents file, default `AGENTS.md`.
-- Writes global Pi files only through explicit global approval.
+## Why the review gate exists
+
+Agents are good at spotting patterns. They are also very good at writing confident nonsense.
+
+So the plugin lets the model help with the boring parts: classification, summaries, and draft rules. It does not let the model apply those rules. That line matters.
+
+The safety contract:
+
+- Model output is draft-only.
+- Registered tools can capture, draft, and list. They cannot apply.
+- Repo-local writes need TUI approval or `/learn approve <id> --confirm`.
+- Global Pi writes need an explicit global target plus `/learn approve <id> --confirm-global` or TUI confirmation.
+- Global writes are constrained to the configured `~/.pi/agent/AGENTS.md` and `~/.pi/agent/APPEND_SYSTEM.md` paths.
+- Repo paths must stay inside the repo.
+- Raw transcript excerpts are bounded by `maxExcerptChars` and should not be copied into durable rules.
 
 ## Tool surface
 
-Registered tools are capture/draft/list only:
+The plugin registers three tools:
 
 ```text
 learning_mark_issue
@@ -171,25 +198,19 @@ learning_draft_rule
 learning_list
 ```
 
-There is intentionally no apply/write tool. Applying a rule requires the TUI review flow or slash-command confirmation.
+There is no apply/write tool. Applying a rule requires review plus explicit approval.
 
-## Trust model
+## Files touched
 
-The plugin is designed so agents can help identify and draft learnings, but humans decide what becomes durable instruction.
+- Creates `.pi/learnings.json` during plugin resource discovery if no config exists.
+- Creates learning records under `.pi/learnings/` by default.
+- Writes approved repo-local rules to the configured repo agents file, default `AGENTS.md`.
+- Writes global Pi files only after explicit global approval.
 
-- Model output is draft-only. It can propose text; it cannot approve itself.
-- Registered tools are capture/draft/list only. There is no apply/write tool.
-- Repo-local writes require TUI approval or the exact CLI confirmation `/learn approve <id> --confirm`.
-- Global Pi writes require an explicit global target plus stronger confirmation: TUI confirmation or `/learn approve <id> --confirm-global`.
-- Global writes are constrained to the configured `~/.pi/agent/AGENTS.md` and `~/.pi/agent/APPEND_SYSTEM.md` targets.
-- Repo paths must stay inside the repo. Escaping paths are ignored and replaced with defaults.
-- Raw transcript excerpts are bounded by `maxExcerptChars` and should not be copied into durable rules.
+## Tiny philosophy
 
-## Safety model
+Durable memory is powerful. Bad durable memory is a footgun with a calendar invite.
 
-- No silent writes to the configured repo agents file; direct CLI approval requires `--confirm`.
-- Global Pi writes target only configured `~/.pi/agent/AGENTS.md` / `APPEND_SYSTEM.md` paths and require explicit TUI confirmation or CLI `--confirm-global`.
-- Repo-local learning artifacts live under `.pi/learnings/` by default.
-- Approved repo rules are inserted under `## Agent Learnings` in the configured repo agents file.
-- Global Pi files require explicit global approval and are never written by normal repo approval.
-- Raw transcript excerpts should stay bounded and should not be copied into durable rules.
+`pi-learnings` tries to keep the useful part: "we just saw the agent mess this up, let's write down the lesson" while avoiding the awful part: agents silently filling your instruction files with vibes, duplicates, and overbroad rules.
+
+Make the lesson specific. Keep the evidence close. Approve the final wording yourself.
